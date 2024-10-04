@@ -21,7 +21,7 @@
               }
             },
             "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.0.0/azd-ext-ai-linux-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.1.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "b4c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
@@ -83,24 +83,24 @@
           ],
           "binaries": {
             "windows": {
-              "url": "https://example.com/test-extension/0.9.0/windows/test-extension.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/0.9.0/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f1a2b3c4d5e67890123456789abcdef0123456789abcdef0123456789abcdef"
+                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "linux": {
-              "url": "https://example.com/test-extension/0.9.0/linux/test-extension",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/0.9.0/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "1a2b3c4d5e67890123456789abcdef0123456789abcdef0123456789abcdefa"
+                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "macos": {
-              "url": "https://example.com/test-extension/0.9.0/macos/test-extension",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/0.9.0/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "2a3b4c5d6e7890123456789abcdef0123456789abcdef0123456789abcdef12"
+                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             }
           }
@@ -114,24 +114,24 @@
           ],
           "binaries": {
             "windows": {
-              "url": "https://example.com/test-extension/1.0.0/windows/test-extension.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/1.0.0/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "3a4b5c6d7e890123456789abcdef0123456789abcdef0123456789abcdef1234"
+                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "linux": {
-              "url": "https://example.com/test-extension/1.0.0/linux/test-extension",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/1.0.0/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "4a5b6c7d8e90123456789abcdef0123456789abcdef0123456789abcdef12345"
+                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "macos": {
-              "url": "https://example.com/test-extension/1.0.0/macos/test-extension",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/1.0.0/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "5a6b7c8d9e0123456789abcdef0123456789abcdef0123456789abcdef123456"
+                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             }
           }
@@ -145,24 +145,24 @@
           ],
           "binaries": {
             "windows": {
-              "url": "https://example.com/test-extension/1.1.0/windows/test-extension.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/1.1.0/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "6a7b8c9d0e123456789abcdef0123456789abcdef0123456789abcdef1234567"
+                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "linux": {
-              "url": "https://example.com/test-extension/1.1.0/linux/test-extension",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/1.1.0/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "7a8b9c0d1e23456789abcdef0123456789abcdef0123456789abcdef12345678"
+                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "macos": {
-              "url": "https://example.com/test-extension/1.1.0/macos/test-extension",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/test/1.1.0/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "8a9b0c1d2e3456789abcdef0123456789abcdef0123456789abcdef123456789"
+                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             }
           }
