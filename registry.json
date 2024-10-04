@@ -14,21 +14,21 @@
           ],
           "binaries": {
             "windows": {
-              "url": "https://example.com/ai-model-deploy/1.0.0/windows/ai-model-deploy.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.0.0/azd-ext-ai-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "a5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "linux": {
-              "url": "https://example.com/ai-model-deploy/1.0.0/linux/ai-model-deploy",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.0.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "b4c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "macos": {
-              "url": "https://example.com/ai-model-deploy/1.0.0/macos/ai-model-deploy",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.0.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "c3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
@@ -45,21 +45,21 @@
           ],
           "binaries": {
             "windows": {
-              "url": "https://example.com/ai-model-deploy/1.1.0/windows/ai-model-deploy.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.1.0/azd-ext-ai-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "linux": {
-              "url": "https://example.com/ai-model-deploy/1.1.0/linux/ai-model-deploy",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.1.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
               }
             },
             "macos": {
-              "url": "https://example.com/ai-model-deploy/1.1.0/macos/ai-model-deploy",
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/extensions/ai/1.1.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
