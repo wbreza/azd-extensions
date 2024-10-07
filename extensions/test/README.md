@@ -1,3 +1,3 @@
-# azd-ext-test
+# azd test extension
 
 A test AZD extension
