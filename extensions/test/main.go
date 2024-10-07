@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -42,5 +43,6 @@ func main() {
 	ctx := context.Background()
 	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		color.Red("Error: %v", err)
+		os.Exit(1)
 	}
 }

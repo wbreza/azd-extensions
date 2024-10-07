@@ -1,15 +1,17 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
 func main() {
 	rootCmd := &cobra.Command{
-		Use:   "azd ai",
+		Use:   "azd ai <group> [options]",
 		Short: "A CLI for managing AI models and services",
 	}
 
@@ -70,8 +72,9 @@ func main() {
 	rootCmd.AddCommand(serviceCmd)
 
 	// Execute the root command
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+	ctx := context.Background()
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		color.Red("Error: %v", err)
 		os.Exit(1)
 	}
 }
