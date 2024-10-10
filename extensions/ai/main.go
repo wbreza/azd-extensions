@@ -7,6 +7,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
+	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 )
 
 func main() {
@@ -24,8 +25,20 @@ func main() {
 	modelListCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List all models",
-		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Println("Executing model list command")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			subscription, err := prompt.PromptSubscription(cmd.Context())
+			if err != nil {
+				return err
+			}
+
+			location, err := prompt.PromptLocation(cmd.Context(), subscription)
+			if err != nil {
+				return err
+			}
+
+			fmt.Printf("Selected subscription: %s\n", subscription.Id)
+			fmt.Printf("Selected location: %s\n", location.RegionalDisplayName)
+			return nil
 		},
 	}
 

@@ -1,0 +1,10 @@
+go 1.23.0
+
+use (
+	./extensions/ai
+	./sdk/azure
+	./sdk/common
+	./sdk/core
+	./sdk/ext
+	./sdk/ux
+)
