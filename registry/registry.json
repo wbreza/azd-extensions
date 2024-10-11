@@ -68,37 +68,6 @@
           }
         },
         {
-          "version": "1.3.0",
-          "usage": "azd ai <command> [options]",
-          "examples": [
-            "azd ai model deployment list",
-            "azd ai model deployment create"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-linux-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-darwin-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            }
-          }
-        },
-        {
           "version": "1.2.0",
           "usage": "azd ai <command> [options]",
           "examples": [
@@ -122,6 +91,37 @@
             },
             "macos": {
               "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.2.0/azd-ext-ai-darwin-amd64",
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
+              }
+            }
+          }
+        },
+        {
+          "version": "1.3.0",
+          "usage": "azd ai <command> [options]",
+          "examples": [
+            "azd ai model deployment list",
+            "azd ai model deployment create"
+          ],
+          "binaries": {
+            "windows": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-windows-amd64.exe",
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
+              }
+            },
+            "linux": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-linux-amd64",
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
+              }
+            },
+            "macos": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
                 "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
