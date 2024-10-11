@@ -168,6 +168,10 @@ func (p *Select) Ask() (*int, error) {
 
 func (p *Select) applyFilter() {
 	// Filter options
+	if p.filter == "" {
+		p.filteredOptions = p.options
+	}
+
 	if p.cancelled || p.complete || p.filter == "" {
 		return
 	}
@@ -369,7 +373,7 @@ func (p *Select) renderMessage2(printer Printer) {
 }
 
 func (p *Select) Render(printer Printer) error {
-	v2 := false
+	v2 := true
 
 	if slices.Contains(os.Args[1:], "--selectv2") {
 		v2 = true
@@ -383,8 +387,6 @@ func (p *Select) Render(printer Printer) error {
 	} else {
 		p.renderMessage1(printer)
 	}
-
-	p.filteredOptions = p.options
 
 	if p.complete || p.cancelled {
 		return nil

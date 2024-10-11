@@ -1,14 +1,20 @@
 package ext
 
 import (
-	"io"
 	"log"
 	"os"
+	"os/signal"
+	"path/filepath"
+	"strings"
+	"syscall"
+	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
 
 	"github.com/spf13/pflag"
 )
+
+var logFile *os.File
 
 func init() {
 	if isDebugEnabled() {
@@ -16,7 +22,60 @@ func init() {
 			log.Printf("%s: %s\n", event, msg)
 		})
 	} else {
-		log.SetOutput(io.Discard)
+		var err error
+
+		exePath, err := os.Executable()
+		if err != nil {
+			log.Fatalf("Failed to get executable name: %v", err)
+		}
+
+		exeNameWithExt := filepath.Base(exePath)                                    // Get the base name of the executable
+		exeName := strings.TrimSuffix(exeNameWithExt, filepath.Ext(exeNameWithExt)) // Remove the extension
+
+		currentDate := time.Now().Format("20060102")        // Format the current date as YYYYMMDD
+		logFileName := exeName + "-" + currentDate + ".log" // Log file name based on the date
+
+		logFile, err = os.OpenFile(logFileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err != nil {
+			log.Fatalf("Failed to open log file: %v", err)
+		}
+
+		// Set log output to the file
+		log.SetOutput(logFile)
+
+		// Optional: Adds timestamp and file information to each log entry
+		log.SetFlags(log.LstdFlags | log.Lshortfile)
+
+		// Register the signal handler to ensure log file is closed gracefully
+		setupSignalHandler()
+	}
+}
+
+// setupSignalHandler listens for system signals (e.g., SIGINT, SIGTERM) and ensures cleanup
+func setupSignalHandler() {
+	signals := make(chan os.Signal, 1)
+	// Notify channel on SIGINT (Ctrl+C) or SIGTERM (termination)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+
+	// Goroutine to handle the signals
+	go func() {
+		// Block until we receive a signal
+		sig := <-signals
+		log.Printf("Received signal: %v, shutting down gracefully...", sig)
+
+		// Perform cleanup
+		cleanup()
+
+		// Exit the application
+		os.Exit(0)
+	}()
+}
+
+// cleanup ensures the log file is closed
+func cleanup() {
+	if logFile != nil {
+		log.Println("Closing log file.")
+		logFile.Close()
 	}
 }
 

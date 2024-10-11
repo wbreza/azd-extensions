@@ -31,17 +31,17 @@ func Ptr[T any](value T) *T {
 	return &value
 }
 
-func Render(renderFn renderFn) Visual {
+func Render(renderFn RenderFn) Visual {
 	return NewVisualElement(renderFn)
 }
 
-type renderFn func(printer Printer) error
+type RenderFn func(printer Printer) error
 type visualElement struct {
 	canvas   Canvas
 	renderFn func(printer Printer) error
 }
 
-func NewVisualElement(renderFn renderFn) *visualElement {
+func NewVisualElement(renderFn RenderFn) *visualElement {
 	return &visualElement{
 		renderFn: renderFn,
 	}

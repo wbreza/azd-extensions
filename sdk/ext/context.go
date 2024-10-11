@@ -148,10 +148,18 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(config.NewUserConfigManager)
 
 	container.MustRegisterSingleton(func(azdContext *azd.Context) (*project.ProjectConfig, error) {
+		if azdContext == nil {
+			return nil, azd.ErrNoProject
+		}
+
 		return project.Load(ctx, azdContext.ProjectPath())
 	})
 
 	container.MustRegisterSingleton(func(azdContext *azd.Context, envManager environment.Manager) (*environment.Environment, error) {
+		if azdContext == nil {
+			return nil, azd.ErrNoProject
+		}
+
 		envName, err := azdContext.GetDefaultEnvironmentName()
 		if err != nil {
 			return nil, err

@@ -84,6 +84,10 @@ func (t *TaskList) Run() error {
 }
 
 func (t *TaskList) AddTask(title string, action func() (TaskState, error)) *TaskList {
+	if t.canvas == nil {
+		t.canvas = NewCanvas(t)
+	}
+
 	task := &Task{
 		Title:  title,
 		Action: action,
