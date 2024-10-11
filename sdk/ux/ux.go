@@ -3,11 +3,19 @@ package ux
 import (
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/fatih/color"
 )
 
 var ErrCancelled = errors.New("cancelled by user")
+
+func init() {
+	forceColorVal, has := os.LookupEnv("FORCE_COLOR")
+	if has && forceColorVal == "1" {
+		color.NoColor = false
+	}
+}
 
 func Hyperlink(url string, text ...string) string {
 	if len(text) == 0 {

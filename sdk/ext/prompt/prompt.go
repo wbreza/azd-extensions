@@ -3,29 +3,75 @@ package prompt
 import (
 	"context"
 	"fmt"
+	"log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"dario.cat/mergo"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/wbreza/azd-extensions/sdk/azure"
-	"github.com/wbreza/azd-extensions/sdk/ext/account"
+	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
-func PromptSubscription(ctx context.Context) (*azure.Subscription, error) {
-	principal, err := account.CurrentPrincipal(ctx)
+type PromptResourceOptions struct {
+	ResourceType            *azure.ResourceType
+	ResourceTypeDisplayName string
+	AllowNewResource        bool
+	SelectorOptions         *PromptSelectOptions
+}
+
+type PromptResourceGroupOptions struct {
+	AllowNewResource bool
+	SelectorOptions  *PromptSelectOptions
+}
+
+type PromptSelectOptions struct {
+	Message        string
+	HelpMessage    string
+	LoadingMessage string
+	DisplayNumbers *bool
+	DisplayCount   int
+}
+
+func PromptSubscription(ctx context.Context, selectorOptions *PromptSelectOptions) (*azure.Subscription, error) {
+	if selectorOptions == nil {
+		selectorOptions = &PromptSelectOptions{}
+	}
+
+	mergo.Merge(selectorOptions, &PromptSelectOptions{
+		Message:        "Select subscription",
+		LoadingMessage: "Loading subscriptions...",
+		HelpMessage:    "Choose an Azure subscription for your project.",
+		DisplayNumbers: ux.Ptr(true),
+		DisplayCount:   10,
+	})
+
+	azdContext, err := ext.CurrentContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	credential, err := account.Credential()
+	principal, err := azdContext.Principal(ctx)
 	if err != nil {
 		return nil, err
+	}
+
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	userConfig, err := azdContext.UserConfig(ctx)
+	if err != nil {
+		log.Println("User config not found")
 	}
 
 	subscriptionService := azure.NewSubscriptionsService(credential, nil)
 
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
-		Text:        "Loading subscriptions...",
+		Text:        selectorOptions.LoadingMessage,
 		ClearOnStop: true,
 	})
 
@@ -45,7 +91,14 @@ func PromptSubscription(ctx context.Context) (*azure.Subscription, error) {
 	}
 
 	var defaultIndex *int
-	var defaultSubscriptionId = "faa080af-c1d8-40ad-9cce-e1a450ca5b57"
+	var defaultSubscriptionId = ""
+	if userConfig != nil {
+		subscriptionId, has := userConfig.GetString("defaults.subscription")
+		if has {
+			defaultSubscriptionId = subscriptionId
+		}
+	}
+
 	for i, subscription := range subscriptions {
 		if *subscription.SubscriptionID == defaultSubscriptionId {
 			defaultIndex = &i
@@ -59,10 +112,10 @@ func PromptSubscription(ctx context.Context) (*azure.Subscription, error) {
 	}
 
 	subscriptionSelector := ux.NewSelect(&ux.SelectConfig{
-		Message:        "Select subscription",
-		HelpMessage:    "Choose an Azure subscription for your project.",
-		DisplayCount:   10,
-		DisplayNumbers: ux.Ptr(true),
+		Message:        selectorOptions.Message,
+		HelpMessage:    selectorOptions.HelpMessage,
+		DisplayCount:   selectorOptions.DisplayCount,
+		DisplayNumbers: selectorOptions.DisplayNumbers,
 		Allowed:        choices,
 		DefaultIndex:   defaultIndex,
 	})
@@ -86,14 +139,36 @@ func PromptSubscription(ctx context.Context) (*azure.Subscription, error) {
 	}, nil
 }
 
-func PromptLocation(ctx context.Context, subscription *azure.Subscription) (*azure.Location, error) {
-	credential, err := azidentity.NewAzureDeveloperCLICredential(nil)
+func PromptLocation(ctx context.Context, subscription *azure.Subscription, selectorOptions *PromptSelectOptions) (*azure.Location, error) {
+	if selectorOptions == nil {
+		selectorOptions = &PromptSelectOptions{}
+	}
+
+	mergo.Merge(selectorOptions, &PromptSelectOptions{
+		Message:        "Select location",
+		LoadingMessage: "Loading locations...",
+		HelpMessage:    "Choose an Azure location for your project.",
+		DisplayNumbers: ux.Ptr(true),
+		DisplayCount:   10,
+	})
+
+	azdContext, err := ext.CurrentContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	userConfig, err := azdContext.UserConfig(ctx)
+	if userConfig != nil {
+		log.Println("User config not found")
+	}
+
 	loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
-		Text:        "Loading locations...",
+		Text:        selectorOptions.LoadingMessage,
 		ClearOnStop: true,
 	})
 
@@ -117,6 +192,13 @@ func PromptLocation(ctx context.Context, subscription *azure.Subscription) (*azu
 
 	var defaultIndex *int
 	var defaultLocation = "eastus2"
+	if userConfig != nil {
+		location, has := userConfig.GetString("defaults.location")
+		if has {
+			defaultLocation = location
+		}
+	}
+
 	for i, location := range locations {
 		if location.Name == defaultLocation {
 			defaultIndex = &i
@@ -130,10 +212,10 @@ func PromptLocation(ctx context.Context, subscription *azure.Subscription) (*azu
 	}
 
 	locationSelector := ux.NewSelect(&ux.SelectConfig{
-		Message:        "Select location",
-		HelpMessage:    "Choose an Azure location for your project.",
-		DisplayCount:   10,
-		DisplayNumbers: ux.Ptr(true),
+		Message:        selectorOptions.Message,
+		HelpMessage:    selectorOptions.HelpMessage,
+		DisplayCount:   selectorOptions.DisplayCount,
+		DisplayNumbers: selectorOptions.DisplayNumbers,
 		Allowed:        choices,
 		DefaultIndex:   defaultIndex,
 	})
@@ -156,10 +238,259 @@ func PromptLocation(ctx context.Context, subscription *azure.Subscription) (*azu
 	}, nil
 }
 
-func PromptResourceGroup() (*azure.ResourceGroup, error) {
-	return nil, nil
+func PromptResourceGroup(ctx context.Context, subscription *azure.Subscription, options *PromptResourceGroupOptions) (*azure.ResourceGroup, error) {
+	if options == nil {
+		options = &PromptResourceGroupOptions{}
+	}
+
+	if options.SelectorOptions == nil {
+		options.SelectorOptions = &PromptSelectOptions{}
+	}
+
+	mergo.Merge(options.SelectorOptions, &PromptSelectOptions{
+		Message:        "Select resource group",
+		LoadingMessage: "Loading resource groups...",
+		HelpMessage:    "Choose an Azure resource group for your project.",
+		DisplayNumbers: ux.Ptr(true),
+		DisplayCount:   10,
+	})
+
+	azdContext, err := ext.CurrentContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+		Text: options.SelectorOptions.LoadingMessage,
+	})
+
+	var resourceGroups []*azure.Resource
+
+	err = loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		resourceService := azure.NewResourceService(credential, nil)
+		resourceGroupList, err := resourceService.ListResourceGroup(ctx, subscription.Id, nil)
+		if err != nil {
+			return err
+		}
+
+		resourceGroups = resourceGroupList
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	choices := make([]string, len(resourceGroups))
+	for i, resourceGroup := range resourceGroups {
+		choices[i] = resourceGroup.Name
+	}
+
+	resourceGroupSelector := ux.NewSelect(&ux.SelectConfig{
+		Message:        options.SelectorOptions.Message,
+		HelpMessage:    options.SelectorOptions.HelpMessage,
+		DisplayCount:   options.SelectorOptions.DisplayCount,
+		DisplayNumbers: options.SelectorOptions.DisplayNumbers,
+		Allowed:        choices,
+	})
+
+	selectedIndex, err := resourceGroupSelector.Ask()
+	if err != nil {
+		return nil, err
+	}
+
+	if selectedIndex == nil {
+		return nil, nil
+	}
+
+	selectedResourceGroup := resourceGroups[*selectedIndex]
+
+	return &azure.ResourceGroup{
+		Id:       selectedResourceGroup.Id,
+		Name:     selectedResourceGroup.Name,
+		Location: selectedResourceGroup.Location,
+	}, nil
 }
 
-func PromptResource() (*azure.Resource, error) {
-	return nil, nil
+func PromptSubscriptionResource(ctx context.Context, subscription *azure.Subscription, options PromptResourceOptions) (*azure.Resource, error) {
+	if options.SelectorOptions == nil {
+		resourceName := options.ResourceTypeDisplayName
+
+		if resourceName == "" && options.ResourceType != nil {
+			resourceName = string(*options.ResourceType)
+		}
+
+		if resourceName == "" {
+			resourceName = "resource"
+		}
+
+		options.SelectorOptions = &PromptSelectOptions{
+			Message:        fmt.Sprintf("Select %s", resourceName),
+			LoadingMessage: fmt.Sprintf("Loading %s resources...", resourceName),
+			HelpMessage:    fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
+			DisplayNumbers: ux.Ptr(true),
+			DisplayCount:   10,
+		}
+	}
+
+	azdContext, err := ext.CurrentContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	var resourceListOptions *armresources.ClientListOptions
+	if options.ResourceType != nil {
+		resourceListOptions = &armresources.ClientListOptions{
+			Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", string(*options.ResourceType))),
+		}
+	}
+
+	loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+		Text: options.SelectorOptions.LoadingMessage,
+	})
+
+	var resources []*azure.Resource
+
+	err = loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		resourceService := azure.NewResourceService(credential, nil)
+		resourceList, err := resourceService.ListSubscriptionResources(ctx, subscription.Id, resourceListOptions)
+		if err != nil {
+			return err
+		}
+
+		resources = resourceList
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	choices := make([]string, len(resources))
+	for i, resource := range resources {
+		parsedResource, err := arm.ParseResourceID(resource.Id)
+		if err != nil {
+			return nil, fmt.Errorf("parsing resource id: %w", err)
+		}
+
+		choices[i] = fmt.Sprintf("%s (%s)", parsedResource.Name, parsedResource.ResourceGroupName)
+	}
+
+	resourceSelector := ux.NewSelect(&ux.SelectConfig{
+		Message:        options.SelectorOptions.Message,
+		HelpMessage:    options.SelectorOptions.HelpMessage,
+		DisplayCount:   options.SelectorOptions.DisplayCount,
+		DisplayNumbers: options.SelectorOptions.DisplayNumbers,
+		Allowed:        choices,
+	})
+
+	selectedIndex, err := resourceSelector.Ask()
+	if err != nil {
+		return nil, err
+	}
+
+	if selectedIndex == nil {
+		return nil, nil
+	}
+
+	return resources[*selectedIndex], nil
+}
+
+func PromptResourceGroupResource(ctx context.Context, resourceGroup *azure.ResourceGroup, options PromptResourceOptions) (*azure.Resource, error) {
+	if options.SelectorOptions == nil {
+		resourceName := options.ResourceTypeDisplayName
+
+		if resourceName == "" && options.ResourceType != nil {
+			resourceName = string(*options.ResourceType)
+		}
+
+		if resourceName == "" {
+			resourceName = "resource"
+		}
+
+		options.SelectorOptions = &PromptSelectOptions{
+			Message:        fmt.Sprintf("Select %s", resourceName),
+			LoadingMessage: fmt.Sprintf("Loading %s resources...", resourceName),
+			HelpMessage:    fmt.Sprintf("Choose an Azure %s for your project.", resourceName),
+			DisplayNumbers: ux.Ptr(true),
+			DisplayCount:   10,
+		}
+	}
+
+	azdContext, err := ext.CurrentContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	parsedResourceGroup, err := arm.ParseResourceID(resourceGroup.Id)
+	if err != nil {
+		return nil, fmt.Errorf("parsing resource group id: %w", err)
+	}
+
+	var resourceListOptions *azure.ListResourceGroupResourcesOptions
+	if options.ResourceType != nil {
+		resourceListOptions = &azure.ListResourceGroupResourcesOptions{
+			Filter: to.Ptr(fmt.Sprintf("resourceType eq '%s'", *options.ResourceType)),
+		}
+	}
+
+	loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+		Text: options.SelectorOptions.LoadingMessage,
+	})
+
+	var resources []*azure.Resource
+
+	err = loadingSpinner.Run(ctx, func(ctx context.Context) error {
+		resourceService := azure.NewResourceService(credential, nil)
+		resourceList, err := resourceService.ListResourceGroupResources(ctx, parsedResourceGroup.SubscriptionID, resourceGroup.Name, resourceListOptions)
+		if err != nil {
+			return err
+		}
+
+		resources = resourceList
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	choices := make([]string, len(resources))
+	for i, resource := range resources {
+		choices[i] = resource.Name
+	}
+
+	resourceSelector := ux.NewSelect(&ux.SelectConfig{
+		Message:        options.SelectorOptions.Message,
+		HelpMessage:    options.SelectorOptions.HelpMessage,
+		DisplayCount:   options.SelectorOptions.DisplayCount,
+		DisplayNumbers: options.SelectorOptions.DisplayNumbers,
+		Allowed:        choices,
+	})
+
+	selectedIndex, err := resourceSelector.Ask()
+	if err != nil {
+		return nil, err
+	}
+
+	if selectedIndex == nil {
+		return nil, nil
+	}
+
+	return resources[*selectedIndex], nil
 }
