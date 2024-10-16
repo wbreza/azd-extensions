@@ -1,6 +1,8 @@
 package cmd
 
-import "github.com/spf13/cobra"
+import (
+	"github.com/spf13/cobra"
+)
 
 func newModelCommand() *cobra.Command {
 	modelCmd := &cobra.Command{
@@ -15,22 +17,6 @@ func newModelCommand() *cobra.Command {
 			return nil
 		},
 	}
-
-	type modelSelectFlags struct {
-		modelName string
-	}
-
-	selectFlags := &modelSelectFlags{}
-
-	modelSelectCmd := &cobra.Command{
-		Use:   "select",
-		Short: "Select a model",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return nil
-		},
-	}
-
-	modelSelectCmd.Flags().StringVarP(&selectFlags.modelName, "name", "n", "", "Model name")
 
 	modelCmd.AddCommand(modelListCmd)
 	modelCmd.AddCommand(newDeploymentCommand())

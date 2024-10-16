@@ -12,10 +12,13 @@ func NewRootCommand() *cobra.Command {
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			debug.WaitForDebugger()
 		},
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 
 	rootCmd.AddCommand(newModelCommand())
 	rootCmd.AddCommand(newServiceCommand())
+	rootCmd.AddCommand(newChatCommand())
 
 	return rootCmd
 }

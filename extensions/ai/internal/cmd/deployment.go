@@ -324,19 +324,17 @@ func newDeploymentCommand() *cobra.Command {
 				return fmt.Errorf("deployment '%s' not found", deleteFlags.name)
 			}
 
+			confirmed := to.Ptr(false)
+
 			if !deleteFlags.force {
 				confirmPrompt := ux.NewConfirm(&ux.ConfirmConfig{
 					Message:      fmt.Sprintf("Are you sure you want to delete the deployment '%s'?", deleteFlags.name),
 					DefaultValue: to.Ptr(false),
 				})
 
-				confirmed, err := confirmPrompt.Ask()
+				confirmed, err = confirmPrompt.Ask()
 				if err != nil {
 					return err
-				}
-
-				if !*confirmed {
-					return nil
 				}
 			}
 
@@ -349,6 +347,10 @@ func newDeploymentCommand() *cobra.Command {
 			}
 
 			taskList.AddTask(fmt.Sprintf("Deleting deployment %s", deleteFlags.name), func() (ux.TaskState, error) {
+				if !*confirmed {
+					return ux.Skipped, ux.ErrCancelled
+				}
+
 				poller, err := deploymentsClient.BeginDelete(ctx, serviceConfig.ResourceGroup, serviceConfig.Service, deleteFlags.name, nil)
 				if err != nil {
 					return ux.Error, err
@@ -385,9 +387,55 @@ func newDeploymentCommand() *cobra.Command {
 	deploymentDeleteCmd.Flags().StringVarP(&deleteFlags.name, "name", "n", "", "Name of the deployment to delete")
 	deploymentDeleteCmd.Flags().BoolVarP(&deleteFlags.force, "force", "f", false, "Force deletion without confirmation")
 
+	type deploymentSelectFlags struct {
+		deploymentName string
+	}
+
+	selectFlags := &deploymentSelectFlags{}
+
+	deploymentSelectCmd := &cobra.Command{
+		Use:   "select",
+		Short: "Select a model",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			azdContext, err := ext.CurrentContext(ctx)
+			if err != nil {
+				return err
+			}
+
+			// Load AI config
+			aiConfig, err := service.LoadOrPrompt(ctx, azdContext)
+			if err != nil {
+				return err
+			}
+
+			// Select model deployment
+			if selectFlags.deploymentName == "" {
+				selectedDeployment, err := service.PromptModelDeployment(ctx, azdContext)
+				if err != nil {
+					return err
+				}
+
+				aiConfig.Model = *selectedDeployment.Name
+			} else {
+				aiConfig.Model = selectFlags.deploymentName
+			}
+
+			// Update AI Config
+			if err := service.Save(ctx, azdContext, aiConfig); err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	deploymentSelectCmd.Flags().StringVarP(&selectFlags.deploymentName, "name", "n", "", "Model name")
+
 	deploymentCmd.AddCommand(deploymentListCmd)
 	deploymentCmd.AddCommand(deploymentCreateCmd)
 	deploymentCmd.AddCommand(deploymentDeleteCmd)
+	deploymentCmd.AddCommand(deploymentSelectCmd)
 
 	return deploymentCmd
 }

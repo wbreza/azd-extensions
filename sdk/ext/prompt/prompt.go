@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -13,6 +14,10 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ux"
+)
+
+var (
+	ErrNoResourcesFound = fmt.Errorf("no resources found")
 )
 
 type PromptResourceOptions struct {
@@ -163,7 +168,7 @@ func PromptLocation(ctx context.Context, subscription *azure.Subscription, selec
 	}
 
 	userConfig, err := azdContext.UserConfig(ctx)
-	if userConfig != nil {
+	if errors.Is(err, ext.ErrUserConfigNotFound) {
 		log.Println("User config not found")
 	}
 
@@ -376,6 +381,10 @@ func PromptSubscriptionResource(ctx context.Context, subscription *azure.Subscri
 		return nil, err
 	}
 
+	if len(resources) == 0 {
+		return nil, fmt.Errorf("no resources found with type '%v'", options.ResourceType)
+	}
+
 	choices := make([]string, len(resources))
 	for i, resource := range resources {
 		parsedResource, err := arm.ParseResourceID(resource.Id)
@@ -468,6 +477,10 @@ func PromptResourceGroupResource(ctx context.Context, resourceGroup *azure.Resou
 
 	if err != nil {
 		return nil, err
+	}
+
+	if len(resources) == 0 {
+		return nil, fmt.Errorf("no resources found with type '%v'", options.ResourceType)
 	}
 
 	choices := make([]string, len(resources))

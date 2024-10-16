@@ -64,18 +64,14 @@ func setupSignalHandler() {
 		log.Printf("Received signal: %v, shutting down gracefully...", sig)
 
 		// Perform cleanup
-		cleanup()
-
-		// Exit the application
-		os.Exit(0)
+		flush()
 	}()
 }
 
-// cleanup ensures the log file is closed
-func cleanup() {
+// flush ensures the log file is closed
+func flush() {
 	if logFile != nil {
-		log.Println("Closing log file.")
-		logFile.Close()
+		logFile.Sync()
 	}
 }
 

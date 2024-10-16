@@ -2,6 +2,8 @@ package internal
 
 import (
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 	"unicode"
 
@@ -22,7 +24,8 @@ type InputEventArgs struct {
 }
 
 type InputConfig struct {
-	InitialValue string
+	InitialValue    string
+	CaptureHintKeys bool
 }
 
 func NewInput() *Input {
@@ -49,13 +52,23 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 		}
 	}
 
+	sigChan := make(chan os.Signal, 1)
+
 	done := func() {
-		i.cursor.HideCursor()
+		signal.Stop(sigChan)
+		close(sigChan)
 
 		if err := keyboard.Close(); err != nil {
 			panic(err)
 		}
 	}
+
+	// Register for SIGINT (Ctrl+C) signal
+	signal.Notify(sigChan, syscall.SIGINT)
+	go func() {
+		<-sigChan
+		i.SigChan <- os.Interrupt
+	}()
 
 	i.cursor.ShowCursor()
 	i.value = []rune(config.InitialValue)
@@ -75,16 +88,14 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 
 			if len(i.value) > 0 && (key == keyboard.KeyBackspace || key == keyboard.KeyBackspace2) {
 				i.value = i.value[:len(i.value)-1]
-			} else if char == '?' {
+			} else if config.CaptureHintKeys && char == '?' {
 				eventArgs.Hint = true
-			} else if key == keyboard.KeyEsc {
+			} else if config.CaptureHintKeys && key == keyboard.KeyEsc {
 				eventArgs.Hint = false
 			} else if key == keyboard.KeySpace {
 				i.value = append(i.value, ' ')
 			} else if unicode.IsPrint(char) {
 				i.value = append(i.value, char)
-			} else if key == keyboard.KeyCtrlC {
-				i.SigChan <- os.Interrupt
 			}
 
 			eventArgs.Value = string(i.value)

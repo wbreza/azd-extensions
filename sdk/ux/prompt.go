@@ -34,6 +34,10 @@ type PromptConfig struct {
 	RequiredMessage string
 	// Whether or not the prompt is required (default: false)
 	Required bool
+	// Whether or not to clear the prompt after completion (default: false)
+	ClearOnCompletion bool
+	// Whether or not to capture hint keys (default: true)
+	CaptureHintKeys bool
 }
 
 var DefaultPromptConfig PromptConfig = PromptConfig{
@@ -43,6 +47,8 @@ var DefaultPromptConfig PromptConfig = PromptConfig{
 	ValidationMessage: "Invalid input",
 	RequiredMessage:   "This field is required",
 	Hint:              "[Type ? for hint]",
+	ClearOnCompletion: false,
+	CaptureHintKeys:   true,
 	ValidationFn: func(input string) (bool, string) {
 		return true, ""
 	},
@@ -116,7 +122,8 @@ func (p *Prompt) Ask() (string, error) {
 	}
 
 	inputOptions := &internal.InputConfig{
-		InitialValue: p.config.DefaultValue,
+		InitialValue:    p.config.DefaultValue,
+		CaptureHintKeys: p.config.CaptureHintKeys,
 	}
 	input, done, err := p.input.ReadInput(inputOptions)
 	if err != nil {
@@ -156,6 +163,10 @@ func (p *Prompt) Ask() (string, error) {
 }
 
 func (p *Prompt) Render(printer Printer) error {
+	if p.config.ClearOnCompletion && p.complete {
+		return nil
+	}
+
 	printer.Fprintf(color.CyanString("? "))
 
 	// Message
@@ -184,11 +195,13 @@ func (p *Prompt) Render(printer Printer) error {
 		p.cursorPosition = Ptr(p.canvas.CursorPosition())
 	}
 
-	printer.Fprintln()
-
 	if p.cancelled {
 		printer.Fprintf(color.HiRedString("(Cancelled)"))
 	}
+
+	// We write a new line to ensure anything else written to the terminal is on the next line
+	// Cursor position for user input is handled further below
+	printer.Fprintln()
 
 	if p.complete || p.cancelled {
 		return nil

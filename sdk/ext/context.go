@@ -2,6 +2,7 @@ package ext
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -15,6 +16,14 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/core/environment"
 	"github.com/wbreza/azd-extensions/sdk/core/project"
 	"github.com/wbreza/azd-extensions/sdk/ext/account"
+)
+
+var (
+	ErrProjectNotFound     = errors.New("azd project not found in current path")
+	ErrEnvironmentNotFound = errors.New("azd environment not found")
+	ErrUserConfigNotFound  = errors.New("azd user config not found")
+	ErrPrincipalNotFound   = errors.New("azd principal not found")
+	ErrNotLoggedIn         = errors.New("azd credential not available")
 )
 
 var current *Context
@@ -45,7 +54,7 @@ func (c *Context) Project(ctx context.Context) (*project.ProjectConfig, error) {
 	if c.project == nil {
 		var project *project.ProjectConfig
 		if err := c.container.Resolve(&project); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, Details: %w", ErrProjectNotFound, err)
 		}
 
 		c.project = project
@@ -58,7 +67,7 @@ func (c *Context) Environment(ctx context.Context) (*environment.Environment, er
 	if c.environment == nil {
 		var env *environment.Environment
 		if err := c.container.Resolve(&env); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, Details: %w", ErrEnvironmentNotFound, err)
 		}
 
 		c.environment = env
@@ -67,19 +76,11 @@ func (c *Context) Environment(ctx context.Context) (*environment.Environment, er
 	return c.environment, nil
 }
 
-func (c *Context) SaveEnvironment(ctx context.Context, env *environment.Environment) error {
-	err := c.container.Invoke(func(envManager environment.Manager) error {
-		return envManager.Save(ctx, env)
-	})
-
-	return err
-}
-
 func (c *Context) UserConfig(ctx context.Context) (config.UserConfig, error) {
 	if c.userConfig == nil {
 		var userConfig config.UserConfig
 		if err := c.container.Resolve(&userConfig); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, Details: %w", ErrUserConfigNotFound, err)
 		}
 
 		c.userConfig = userConfig
@@ -88,19 +89,11 @@ func (c *Context) UserConfig(ctx context.Context) (config.UserConfig, error) {
 	return c.userConfig, nil
 }
 
-func (c *Context) SaveUserConfig(ctx context.Context, userConfig config.UserConfig) error {
-	err := c.container.Invoke(func(userConfigManager config.UserConfigManager) error {
-		return userConfigManager.Save(userConfig)
-	})
-
-	return err
-}
-
 func (c *Context) Credential() (azcore.TokenCredential, error) {
 	if c.credential == nil {
 		azdCredential, err := azidentity.NewAzureDeveloperCLICredential(nil)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, Details: %w", ErrNotLoggedIn, err)
 		}
 
 		c.credential = azdCredential
@@ -113,7 +106,7 @@ func (c *Context) Principal(ctx context.Context) (*account.Principal, error) {
 	if c.principal == nil {
 		credential, err := c.Credential()
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, Details: %w", ErrPrincipalNotFound, err)
 		}
 
 		accessToken, err := credential.GetToken(ctx, policy.TokenRequestOptions{
@@ -133,6 +126,22 @@ func (c *Context) Principal(ctx context.Context) (*account.Principal, error) {
 	}
 
 	return c.principal, nil
+}
+
+func (c *Context) SaveEnvironment(ctx context.Context, env *environment.Environment) error {
+	err := c.container.Invoke(func(envManager environment.Manager) error {
+		return envManager.Save(ctx, env)
+	})
+
+	return err
+}
+
+func (c *Context) SaveUserConfig(ctx context.Context, userConfig config.UserConfig) error {
+	err := c.container.Invoke(func(userConfigManager config.UserConfigManager) error {
+		return userConfigManager.Save(userConfig)
+	})
+
+	return err
 }
 
 func registerComponents(ctx context.Context, container *ioc.NestedContainer) error {

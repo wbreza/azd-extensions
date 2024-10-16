@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal/service"
 	"github.com/wbreza/azd-extensions/sdk/ext"
@@ -12,6 +13,7 @@ type serviceSetFlags struct {
 	subscription  string
 	resourceGroup string
 	serviceName   string
+	modelName     string
 }
 
 func newServiceCommand() *cobra.Command {
@@ -33,23 +35,33 @@ func newServiceCommand() *cobra.Command {
 				return err
 			}
 
-			var serviceConfig *service.ServiceConfig
+			var aiConfig *service.AiConfig
 
 			if setFlags.subscription == "" || setFlags.resourceGroup == "" || setFlags.serviceName == "" {
-				var err error
-				serviceConfig, err = service.Prompt(ctx, azdContext)
+				selectedAccount, err := service.PromptAccount(ctx, azdContext)
 				if err != nil {
 					return err
 				}
+
+				parsedResource, err := arm.ParseResourceID(*selectedAccount.ID)
+				if err != nil {
+					return err
+				}
+
+				aiConfig = &service.AiConfig{
+					Subscription:  parsedResource.SubscriptionID,
+					ResourceGroup: parsedResource.ResourceGroupName,
+					Service:       parsedResource.Name,
+				}
 			} else {
-				serviceConfig = &service.ServiceConfig{
+				aiConfig = &service.AiConfig{
 					Subscription:  setFlags.subscription,
 					ResourceGroup: setFlags.resourceGroup,
 					Service:       setFlags.serviceName,
 				}
 			}
 
-			if err := service.Save(ctx, azdContext, serviceConfig); err != nil {
+			if err := service.Save(ctx, azdContext, aiConfig); err != nil {
 				return err
 			}
 

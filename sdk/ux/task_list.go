@@ -19,6 +19,7 @@ type TaskListConfig struct {
 	ErrorStyle   string
 	WarningStyle string
 	RunningStyle string
+	SkippedStyle string
 }
 
 var DefaultTaskListConfig TaskListConfig = TaskListConfig{
@@ -27,6 +28,7 @@ var DefaultTaskListConfig TaskListConfig = TaskListConfig{
 	ErrorStyle:   color.RedString("(x) Error "),
 	WarningStyle: color.YellowString("(!) Warning "),
 	RunningStyle: color.CyanString("(-) Running "),
+	SkippedStyle: color.HiBlackString("(o) Skipped "),
 }
 
 type TaskList struct {
@@ -50,6 +52,7 @@ type TaskState int
 
 const (
 	Running TaskState = iota
+	Skipped
 	Warning
 	Error
 	Success
@@ -100,11 +103,10 @@ func (t *TaskList) AddTask(title string, action func() (TaskState, error)) *Task
 		task.endTime = Ptr(time.Now())
 
 		if err != nil {
-			task.State = Error
 			task.Error = err
-		} else {
-			task.State = state
 		}
+
+		task.State = state
 
 		atomic.AddInt32(&t.completed, 1)
 		t.canvas.Update()
@@ -146,6 +148,8 @@ func (t *TaskList) Render(printer Printer) error {
 			printer.Fprintf("%s %s %s %s\n", t.config.ErrorStyle, task.Title, elapsedText, color.RedString("(%s)", task.Error.Error()))
 		case Success:
 			printer.Fprintf("%s %s  %s\n", t.config.SuccessStyle, task.Title, elapsedText)
+		case Skipped:
+			printer.Fprintf("%s %s %s\n", t.config.SkippedStyle, task.Title, color.RedString("(%s)", task.Error.Error()))
 		}
 	}
 

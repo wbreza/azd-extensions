@@ -95,17 +95,17 @@ func (s *Spinner) Stop(ctx context.Context) error {
 }
 
 func (s *Spinner) Run(ctx context.Context, task func(context.Context) error) error {
+	s.options.ClearOnStop = true
+
 	if err := s.Start(ctx); err != nil {
 		return err
 	}
 
-	err := task(ctx)
+	defer func() {
+		_ = s.Stop(ctx)
+	}()
 
-	if stopErr := s.Stop(ctx); stopErr != nil {
-		return stopErr
-	}
-
-	return err
+	return task(ctx)
 }
 
 func (s *Spinner) UpdateText(text string) {
