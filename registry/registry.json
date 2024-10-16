@@ -133,6 +133,7 @@
           "version": "1.4.0",
           "usage": "azd ai <command> [options]",
           "examples": [
+            "azd ai chat",
             "azd ai model deployment list",
             "azd ai model deployment create"
           ],
