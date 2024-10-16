@@ -49,6 +49,10 @@ func (c *canvas) Run() error {
 }
 
 func (c *canvas) Update() error {
+	if c.printer == nil {
+		return nil
+	}
+
 	c.updateLock.Lock()
 	defer c.updateLock.Unlock()
 

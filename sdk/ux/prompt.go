@@ -37,7 +37,7 @@ type PromptConfig struct {
 	// Whether or not to clear the prompt after completion (default: false)
 	ClearOnCompletion bool
 	// Whether or not to capture hint keys (default: true)
-	CaptureHintKeys bool
+	IgnoreHintKeys bool
 }
 
 var DefaultPromptConfig PromptConfig = PromptConfig{
@@ -48,7 +48,7 @@ var DefaultPromptConfig PromptConfig = PromptConfig{
 	RequiredMessage:   "This field is required",
 	Hint:              "[Type ? for hint]",
 	ClearOnCompletion: false,
-	CaptureHintKeys:   true,
+	IgnoreHintKeys:    false,
 	ValidationFn: func(input string) (bool, string) {
 		return true, ""
 	},
@@ -71,11 +71,11 @@ type Prompt struct {
 
 func NewPrompt(config *PromptConfig) *Prompt {
 	mergedConfig := PromptConfig{}
-	if err := mergo.Merge(&mergedConfig, config, mergo.WithoutDereference); err != nil {
+	if err := mergo.Merge(&mergedConfig, DefaultPromptConfig, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	if err := mergo.Merge(&mergedConfig, DefaultPromptConfig, mergo.WithoutDereference); err != nil {
+	if err := mergo.Merge(&mergedConfig, config, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
@@ -122,8 +122,8 @@ func (p *Prompt) Ask() (string, error) {
 	}
 
 	inputOptions := &internal.InputConfig{
-		InitialValue:    p.config.DefaultValue,
-		CaptureHintKeys: p.config.CaptureHintKeys,
+		InitialValue:   p.config.DefaultValue,
+		IgnoreHintKeys: p.config.IgnoreHintKeys,
 	}
 	input, done, err := p.input.ReadInput(inputOptions)
 	if err != nil {

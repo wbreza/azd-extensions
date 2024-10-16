@@ -24,8 +24,8 @@ type InputEventArgs struct {
 }
 
 type InputConfig struct {
-	InitialValue    string
-	CaptureHintKeys bool
+	InitialValue   string
+	IgnoreHintKeys bool
 }
 
 func NewInput() *Input {
@@ -88,9 +88,9 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 
 			if len(i.value) > 0 && (key == keyboard.KeyBackspace || key == keyboard.KeyBackspace2) {
 				i.value = i.value[:len(i.value)-1]
-			} else if config.CaptureHintKeys && char == '?' {
+			} else if !config.IgnoreHintKeys && char == '?' {
 				eventArgs.Hint = true
-			} else if config.CaptureHintKeys && key == keyboard.KeyEsc {
+			} else if !config.IgnoreHintKeys && key == keyboard.KeyEsc {
 				eventArgs.Hint = false
 			} else if key == keyboard.KeySpace {
 				i.value = append(i.value, ' ')

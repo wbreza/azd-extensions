@@ -109,8 +109,8 @@ func (p *Confirm) Ask() (*bool, error) {
 	}
 
 	inputConfig := &internal.InputConfig{
-		InitialValue:    p.displayValue,
-		CaptureHintKeys: true,
+		InitialValue:   p.displayValue,
+		IgnoreHintKeys: true,
 	}
 	input, done, err := p.input.ReadInput(inputConfig)
 	if err != nil {

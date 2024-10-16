@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -16,9 +17,14 @@ import (
 )
 
 type chatUsageFlags struct {
-	systemMessage string
-	temperature   float32
-	maxTokens     int32
+	message        string
+	systemMessage  string
+	subscriptionId string
+	resourceGroup  string
+	serviceName    string
+	modelName      string
+	temperature    float32
+	maxTokens      int32
 }
 
 var (
@@ -51,9 +57,22 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := service.LoadOrPrompt(ctx, azdContext)
-			if err != nil {
-				return err
+			var aiConfig *service.AiConfig
+			if chatFlags.subscriptionId != "" && chatFlags.resourceGroup != "" && chatFlags.serviceName != "" {
+				aiConfig = &service.AiConfig{
+					Subscription:  chatFlags.subscriptionId,
+					ResourceGroup: chatFlags.resourceGroup,
+					Service:       chatFlags.serviceName,
+				}
+			} else {
+				aiConfig, err = service.LoadOrPrompt(ctx, azdContext)
+				if err != nil {
+					return err
+				}
+			}
+
+			if chatFlags.modelName != "" {
+				aiConfig.Model = chatFlags.modelName
 			}
 
 			if aiConfig.Model == "" {
@@ -122,6 +141,8 @@ func newChatCommand() *cobra.Command {
 			fmt.Printf("AI Service: %s %s\n", color.CyanString(aiConfig.Service), color.HiBlackString("(%s)", aiConfig.ResourceGroup))
 			fmt.Printf("Model: %s %s\n", color.CyanString(aiConfig.Model), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
 			fmt.Printf("System Message: %s\n", color.CyanString(chatFlags.systemMessage))
+			fmt.Printf("Temperature: %s %s\n", color.CyanString(fmt.Sprint(chatFlags.temperature)), color.HiBlackString("(Controls randomness)"))
+			fmt.Printf("Max Tokens: %s %s\n", color.CyanString(fmt.Sprint(chatFlags.maxTokens)), color.HiBlackString("(Maximum number of tokens to generate)"))
 			fmt.Println()
 
 			messages := []azopenai.ChatRequestMessageClassification{}
@@ -129,37 +150,60 @@ func newChatCommand() *cobra.Command {
 				Content: azopenai.NewChatRequestSystemMessageContent(chatFlags.systemMessage),
 			})
 
+			thinkingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+				Text: "Thinking...",
+			})
+
+			userMessage := chatFlags.message
+
 			for {
-				chatPrompt := ux.NewPrompt(&ux.PromptConfig{
-					Message:           "User",
-					PlaceHolder:       "Press `Ctrl+C` to cancel",
-					ClearOnCompletion: true,
-					CaptureHintKeys:   false,
-				})
+				var err error
 
-				chatMessage, err := chatPrompt.Ask()
-				if err != nil {
-					if errors.Is(err, ux.ErrCancelled) {
-						break
+				if userMessage == "" {
+					chatPrompt := ux.NewPrompt(&ux.PromptConfig{
+						Message:           "User",
+						PlaceHolder:       "Press `Ctrl+C` to cancel",
+						Required:          true,
+						RequiredMessage:   "Please enter a message",
+						ClearOnCompletion: true,
+						IgnoreHintKeys:    true,
+					})
+
+					userMessage, err = chatPrompt.Ask()
+					if err != nil {
+						if errors.Is(err, ux.ErrCancelled) {
+							break
+						}
+
+						return err
 					}
-
-					return err
 				}
 
-				fmt.Printf("%s: %s\n", color.GreenString("User"), color.HiBlackString(chatMessage))
+				fmt.Printf("%s: %s\n", color.GreenString("User"), color.HiBlackString(userMessage))
 				fmt.Println()
 
 				messages = append(messages, &azopenai.ChatRequestUserMessage{
-					Content: azopenai.NewChatRequestUserMessageContent(chatMessage),
+					Content: azopenai.NewChatRequestUserMessageContent(userMessage),
 				})
 
-				chatResponse, err := chatClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
-					Messages:       messages,
-					DeploymentName: &aiConfig.Model,
-					Temperature:    &chatFlags.temperature,
-					ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
-					MaxTokens:      &chatFlags.maxTokens,
-				}, nil)
+				var chatResponse *azopenai.ChatCompletions
+
+				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
+					response, err := chatClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
+						Messages:       messages,
+						DeploymentName: &aiConfig.Model,
+						Temperature:    &chatFlags.temperature,
+						ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
+						MaxTokens:      &chatFlags.maxTokens,
+					}, nil)
+					if err != nil {
+						return err
+					}
+
+					chatResponse = &response.ChatCompletions
+					return nil
+				})
+
 				if err != nil {
 					return err
 				}
@@ -169,6 +213,7 @@ func newChatCommand() *cobra.Command {
 				}
 
 				fmt.Println()
+				userMessage = ""
 			}
 
 			return nil
@@ -178,6 +223,11 @@ func newChatCommand() *cobra.Command {
 	chatCmd.Flags().StringVar(&chatFlags.systemMessage, "system-message", defaultSystemMessage, "System message to send to the AI model")
 	chatCmd.Flags().Float32Var(&chatFlags.temperature, "temperature", defaultTemperature, "Temperature for sampling")
 	chatCmd.Flags().Int32Var(&chatFlags.maxTokens, "max-tokens", defaultMaxTokens, "Maximum number of tokens to generate")
+	chatCmd.Flags().StringVarP(&chatFlags.message, "message", "m", "", "Message to send to the AI model")
+	chatCmd.Flags().StringVarP(&chatFlags.modelName, "model deployment name", "d", "", "Name of the model to use")
+	chatCmd.Flags().StringVarP(&chatFlags.resourceGroup, "resource-group", "g", "", "Azure resource group")
+	chatCmd.Flags().StringVarP(&chatFlags.serviceName, "name", "n", "", "Azure AI service name")
+	chatCmd.Flags().StringVarP(&chatFlags.subscriptionId, "subscription", "s", "", "Azure subscription ID")
 
 	return chatCmd
 }
