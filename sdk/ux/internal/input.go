@@ -64,10 +64,12 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 	}
 
 	// Register for SIGINT (Ctrl+C) signal
-	signal.Notify(sigChan, syscall.SIGINT)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
-		<-sigChan
-		i.SigChan <- os.Interrupt
+		_, ok := <-sigChan
+		if ok {
+			i.SigChan <- os.Interrupt
+		}
 	}()
 
 	i.cursor.ShowCursor()
@@ -96,6 +98,8 @@ func (i *Input) ReadInput(config *InputConfig) (<-chan InputEventArgs, func(), e
 				i.value = append(i.value, ' ')
 			} else if unicode.IsPrint(char) {
 				i.value = append(i.value, char)
+			} else if key == keyboard.KeyCtrlC || key == keyboard.KeyCtrlX {
+				i.SigChan <- os.Interrupt
 			}
 
 			eventArgs.Value = string(i.value)

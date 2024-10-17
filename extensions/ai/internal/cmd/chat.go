@@ -162,7 +162,7 @@ func newChatCommand() *cobra.Command {
 				if userMessage == "" {
 					chatPrompt := ux.NewPrompt(&ux.PromptConfig{
 						Message:           "User",
-						PlaceHolder:       "Press `Ctrl+C` to cancel",
+						PlaceHolder:       "Press `Ctrl+X` to cancel",
 						Required:          true,
 						RequiredMessage:   "Please enter a message",
 						ClearOnCompletion: true,
