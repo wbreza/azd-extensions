@@ -1,4 +1,4 @@
-package service
+package internal
 
 import (
 	"context"
@@ -6,13 +6,9 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
-	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/core/config"
 	"github.com/wbreza/azd-extensions/sdk/ext"
-	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
-	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
 type AiConfig struct {
@@ -29,7 +25,7 @@ var (
 )
 
 func LoadOrPrompt(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
-	config, err := Load(ctx, azdContext)
+	config, err := LoadAiConfig(ctx, azdContext)
 	if err != nil && errors.Is(err, ErrNotFound) {
 		account, err := PromptAccount(ctx, azdContext)
 		if err != nil {
@@ -47,7 +43,7 @@ func LoadOrPrompt(ctx context.Context, azdContext *ext.Context) (*AiConfig, erro
 			Service:       parsedResource.Name,
 		}
 
-		if err := Save(ctx, azdContext, config); err != nil {
+		if err := SaveAiConfig(ctx, azdContext, config); err != nil {
 			return nil, err
 		}
 	}
@@ -55,7 +51,7 @@ func LoadOrPrompt(ctx context.Context, azdContext *ext.Context) (*AiConfig, erro
 	return config, nil
 }
 
-func Load(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
+func LoadAiConfig(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
 	var azdConfig config.Config
 
 	env, err := azdContext.Environment(ctx)
@@ -85,7 +81,7 @@ func Load(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
 	return nil, ErrNotFound
 }
 
-func Save(ctx context.Context, azdContext *ext.Context, config *AiConfig) error {
+func SaveAiConfig(ctx context.Context, azdContext *ext.Context, config *AiConfig) error {
 	if azdContext == nil {
 		return errors.New("azdContext is required")
 	}
@@ -148,105 +144,4 @@ func Save(ctx context.Context, azdContext *ext.Context, config *AiConfig) error 
 	}
 
 	return errors.New("unable to save service configuration")
-}
-
-func PromptAccount(ctx context.Context, azdContext *ext.Context) (*armcognitiveservices.Account, error) {
-	subscription, err := prompt.PromptSubscription(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	credential, err := azdContext.Credential()
-	if err != nil {
-		return nil, err
-	}
-
-	selectedAccount, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
-		ResourceType:            to.Ptr(azure.ResourceTypeCognitiveServiceAccount),
-		ResourceTypeDisplayName: "Azure AI service",
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	parsedService, err := arm.ParseResourceID(selectedAccount.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	accountClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	accountResponse, err := accountClient.Get(ctx, parsedService.ResourceGroupName, parsedService.Name, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &accountResponse.Account, nil
-}
-
-func PromptModelDeployment(ctx context.Context, azdContext *ext.Context) (*armcognitiveservices.Deployment, error) {
-	aiConfig, err := LoadOrPrompt(ctx, azdContext)
-	if err != nil {
-		return nil, err
-	}
-
-	credential, err := azdContext.Credential()
-	if err != nil {
-		return nil, err
-	}
-
-	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	deploymentList := []*armcognitiveservices.Deployment{}
-
-	loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
-		Text: "Loading model deployments...",
-	})
-
-	err = loadingSpinner.Run(ctx, func(ctx context.Context) error {
-		modelPager := deploymentsClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Service, nil)
-		for modelPager.More() {
-			models, err := modelPager.NextPage(ctx)
-			if err != nil {
-				return err
-			}
-
-			deploymentList = append(deploymentList, models.Value...)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	choices := make([]string, len(deploymentList))
-	for i, deployment := range deploymentList {
-		choices[i] = fmt.Sprintf("%s (Model: %s, Version: %s)", *deployment.Name, *deployment.Properties.Model.Name, *deployment.Properties.Model.Version)
-	}
-
-	if len(choices) == 0 {
-		return nil, ErrNoModelDeployments
-	}
-
-	modelSelector := ux.NewSelect(&ux.SelectConfig{
-		Message:        "Select a model",
-		Allowed:        choices,
-		DisplayCount:   10,
-		DisplayNumbers: ux.Ptr(true),
-	})
-
-	selectedModelIndex, err := modelSelector.Ask()
-	if err != nil {
-		return nil, err
-	}
-
-	return deploymentList[*selectedModelIndex], nil
 }

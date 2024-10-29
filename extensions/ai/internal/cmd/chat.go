@@ -10,9 +10,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/wbreza/azd-extensions/extensions/ai/internal/service"
+	"github.com/wbreza/azd-extensions/extensions/ai/internal"
+	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
+	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
@@ -57,15 +59,20 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			var aiConfig *service.AiConfig
+			principal, err := azdContext.Principal(ctx)
+			if err != nil {
+				return err
+			}
+
+			var aiConfig *internal.AiConfig
 			if chatFlags.subscriptionId != "" && chatFlags.resourceGroup != "" && chatFlags.serviceName != "" {
-				aiConfig = &service.AiConfig{
+				aiConfig = &internal.AiConfig{
 					Subscription:  chatFlags.subscriptionId,
 					ResourceGroup: chatFlags.resourceGroup,
 					Service:       chatFlags.serviceName,
 				}
 			} else {
-				aiConfig, err = service.LoadOrPrompt(ctx, azdContext)
+				aiConfig, err = internal.LoadOrPrompt(ctx, azdContext)
 				if err != nil {
 					return err
 				}
@@ -75,10 +82,22 @@ func newChatCommand() *cobra.Command {
 				aiConfig.Model = chatFlags.modelName
 			}
 
+			subscription := &azure.Subscription{
+				Id:       aiConfig.Subscription,
+				TenantId: principal.TenantId,
+			}
+
+			resourceGroup, err := prompt.PromptResourceGroup(ctx, subscription, nil)
+			if err != nil {
+				return err
+			}
+
+			fmt.Println(resourceGroup.Id)
+
 			if aiConfig.Model == "" {
-				selectedDeployment, err := service.PromptModelDeployment(ctx, azdContext)
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig)
 				if err != nil {
-					if errors.Is(err, service.ErrNoModelDeployments) {
+					if errors.Is(err, internal.ErrNoModelDeployments) {
 						return &ext.ErrorWithSuggestion{
 							Err:        err,
 							Suggestion: fmt.Sprintf("Run %s to create a model deployment", color.CyanString("azd ai model deployment create")),
@@ -88,7 +107,7 @@ func newChatCommand() *cobra.Command {
 				}
 
 				aiConfig.Model = *selectedDeployment.Name
-				if err := service.Save(ctx, azdContext, aiConfig); err != nil {
+				if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
 					return err
 				}
 

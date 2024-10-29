@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/wbreza/azd-extensions/sdk/common/convert"
 )
 
 // Optional parameters for resource group listing.
@@ -73,7 +74,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 	subscriptionId string,
 	resourceGroupName string,
 	listOptions *ListResourceGroupResourcesOptions,
-) ([]*Resource, error) {
+) ([]*ResourceExtended, error) {
 	client, err := rs.createResourcesClient(subscriptionId)
 	if err != nil {
 		return nil, err
@@ -86,7 +87,7 @@ func (rs *ResourceService) ListResourceGroupResources(
 		options.Filter = listOptions.Filter
 	}
 
-	resources := []*Resource{}
+	resources := []*ResourceExtended{}
 	pager := client.NewListByResourceGroupPager(resourceGroupName, &options)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -95,16 +96,37 @@ func (rs *ResourceService) ListResourceGroupResources(
 		}
 
 		for _, resource := range page.ResourceListResult.Value {
-			resources = append(resources, &Resource{
-				Id:       *resource.ID,
-				Name:     *resource.Name,
-				Type:     *resource.Type,
-				Location: *resource.Location,
+			resources = append(resources, &ResourceExtended{
+				Resource: Resource{
+					Id:       *resource.ID,
+					Name:     *resource.Name,
+					Type:     *resource.Type,
+					Location: *resource.Location,
+				},
+				Kind: convert.ToValueWithDefault(resource.Kind, ""),
 			})
 		}
 	}
 
 	return resources, nil
+}
+
+func (rs *ResourceService) GetResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) (*ResourceGroup, error) {
+	client, err := rs.createResourceGroupClient(subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	getResponse, err := client.Get(ctx, resourceGroupName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting resource group: %w", err)
+	}
+
+	return &ResourceGroup{
+		Id:       *getResponse.ID,
+		Name:     *getResponse.Name,
+		Location: *getResponse.Location,
+	}, nil
 }
 
 func (rs *ResourceService) ListResourceGroup(
@@ -159,7 +181,7 @@ func (rs *ResourceService) ListSubscriptionResources(
 	ctx context.Context,
 	subscriptionId string,
 	listOptions *armresources.ClientListOptions,
-) ([]*Resource, error) {
+) ([]*ResourceExtended, error) {
 	client, err := rs.createResourcesClient(subscriptionId)
 	if err != nil {
 		return nil, err
@@ -172,7 +194,7 @@ func (rs *ResourceService) ListSubscriptionResources(
 		options.Filter = listOptions.Filter
 	}
 
-	resources := []*Resource{}
+	resources := []*ResourceExtended{}
 	pager := client.NewListPager(&options)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -181,11 +203,14 @@ func (rs *ResourceService) ListSubscriptionResources(
 		}
 
 		for _, resource := range page.ResourceListResult.Value {
-			resources = append(resources, &Resource{
-				Id:       *resource.ID,
-				Name:     *resource.Name,
-				Type:     *resource.Type,
-				Location: *resource.Location,
+			resources = append(resources, &ResourceExtended{
+				Resource: Resource{
+					Id:       *resource.ID,
+					Name:     *resource.Name,
+					Type:     *resource.Type,
+					Location: *resource.Location,
+				},
+				Kind: convert.ToValueWithDefault(resource.Kind, ""),
 			})
 		}
 	}

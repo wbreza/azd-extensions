@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"time"
@@ -10,7 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
-	"github.com/wbreza/azd-extensions/extensions/ai/internal/service"
+	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
@@ -32,7 +31,7 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			serviceConfig, err := service.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
 			if err != nil {
 				return err
 			}
@@ -44,12 +43,12 @@ func newDeploymentCommand() *cobra.Command {
 
 			deployments := []*armcognitiveservices.Deployment{}
 
-			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(serviceConfig.Subscription, credential, nil)
+			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, nil)
 			if err != nil {
 				return err
 			}
 
-			deploymentsPager := deploymentsClient.NewListPager(serviceConfig.ResourceGroup, serviceConfig.Service, nil)
+			deploymentsPager := deploymentsClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Service, nil)
 			for deploymentsPager.More() {
 				pageResponse, err := deploymentsPager.NextPage(ctx)
 				if err != nil {
@@ -82,90 +81,20 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			serviceConfig, err := service.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
 			if err != nil {
 				return err
 			}
 
-			credential, err := azdContext.Credential()
+			selectedModel, err := internal.PromptModel(ctx, azdContext, aiConfig)
 			if err != nil {
 				return err
 			}
 
-			clientFactory, err := armcognitiveservices.NewClientFactory(serviceConfig.Subscription, credential, nil)
+			selectedSku, err := internal.PromptModelSku(ctx, azdContext, aiConfig, selectedModel)
 			if err != nil {
 				return err
 			}
-
-			accountsClient := clientFactory.NewAccountsClient()
-			modelsClient := clientFactory.NewModelsClient()
-			deploymentsClient := clientFactory.NewDeploymentsClient()
-
-			loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
-				Text: "Loading AI models",
-			})
-
-			models := []*armcognitiveservices.Model{}
-
-			loadingSpinner.Run(ctx, func(ctx context.Context) error {
-				aiService, err := accountsClient.Get(ctx, serviceConfig.ResourceGroup, serviceConfig.Service, nil)
-				if err != nil {
-					return err
-				}
-
-				modelPager := modelsClient.NewListPager(*aiService.Location, nil)
-				for modelPager.More() {
-					pageResponse, err := modelPager.NextPage(ctx)
-					if err != nil {
-						return err
-					}
-
-					for _, model := range pageResponse.Value {
-						if *model.Kind == *aiService.Kind {
-							models = append(models, model)
-						}
-					}
-				}
-
-				return nil
-			})
-
-			modelChoices := make([]string, len(models))
-			for i, model := range models {
-				modelChoices[i] = fmt.Sprintf("%s (Version: %s)", *model.Model.Name, *model.Model.Version)
-			}
-
-			modelSelect := ux.NewSelect(&ux.SelectConfig{
-				Message:        "Select a model",
-				Allowed:        modelChoices,
-				DisplayCount:   10,
-				DisplayNumbers: to.Ptr(true),
-			})
-
-			selectedModelIndex, err := modelSelect.Ask()
-			if err != nil {
-				return err
-			}
-
-			selectedModel := models[*selectedModelIndex]
-
-			skuChoices := make([]string, len(selectedModel.Model.SKUs))
-			for i, sku := range selectedModel.Model.SKUs {
-				skuChoices[i] = *sku.Name
-			}
-
-			skuPrompt := ux.NewSelect(&ux.SelectConfig{
-				Message: "Select a Deployment Type",
-				Allowed: skuChoices,
-			})
-
-			selectedSkuIndex, err := skuPrompt.Ask()
-			if err != nil {
-				return err
-			}
-
-			selectedSku := selectedModel.Model.SKUs[*selectedSkuIndex]
-
 			var deploymentName string
 
 			namePrompt := ux.NewPrompt(&ux.PromptConfig{
@@ -203,13 +132,26 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
+			credential, err := azdContext.Credential()
+			if err != nil {
+				return err
+			}
+
+			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, nil)
+			if err != nil {
+				return err
+			}
+
 			taskList.AddTask(fmt.Sprintf("Creating deployment %s", deploymentName), func() (ux.TaskState, error) {
-				existingDeployment, err := deploymentsClient.Get(ctx, serviceConfig.ResourceGroup, serviceConfig.Service, deploymentName, nil)
+
+				deploymentsClient := clientFactory.NewDeploymentsClient()
+
+				existingDeployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, nil)
 				if err == nil && *existingDeployment.Name == deploymentName {
 					return ux.Error, errors.New("deployment with the same name already exists")
 				}
 
-				poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, serviceConfig.ResourceGroup, serviceConfig.Service, deploymentName, deployment, nil)
+				poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, deployment, nil)
 				if err != nil {
 					return ux.Error, err
 				}
@@ -255,7 +197,7 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			serviceConfig, err := service.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
 			if err != nil {
 				return err
 			}
@@ -265,7 +207,7 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			clientFactory, err := armcognitiveservices.NewClientFactory(serviceConfig.Subscription, credential, nil)
+			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, nil)
 			if err != nil {
 				return err
 			}
@@ -273,53 +215,15 @@ func newDeploymentCommand() *cobra.Command {
 			deploymentsClient := clientFactory.NewDeploymentsClient()
 
 			if deleteFlags.name == "" {
-				deployments := []*armcognitiveservices.Deployment{}
-
-				loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
-					Text: "Loading AI deployments",
-				})
-
-				err := loadingSpinner.Run(ctx, func(ctx context.Context) error {
-					deploymentsPager := deploymentsClient.NewListPager(serviceConfig.ResourceGroup, serviceConfig.Service, nil)
-					for deploymentsPager.More() {
-						pageResponse, err := deploymentsPager.NextPage(ctx)
-						if err != nil {
-							return err
-						}
-
-						deployments = append(deployments, pageResponse.Value...)
-					}
-
-					return nil
-				})
-
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig)
 				if err != nil {
 					return err
 				}
 
-				if len(deployments) == 0 {
-					return fmt.Errorf("no deployments found")
-				}
-
-				deploymentChoices := make([]string, len(deployments))
-				for i, deployment := range deployments {
-					deploymentChoices[i] = fmt.Sprintf("%s (Model: %s, Version: %s)", *deployment.Name, *deployment.Properties.Model.Name, *deployment.Properties.Model.Version)
-				}
-
-				deploymentSelect := ux.NewSelect(&ux.SelectConfig{
-					Message: "Select a deployment to delete",
-					Allowed: deploymentChoices,
-				})
-
-				selectedDeploymentIndex, err := deploymentSelect.Ask()
-				if err != nil {
-					return err
-				}
-
-				deleteFlags.name = *deployments[*selectedDeploymentIndex].Name
+				deleteFlags.name = *selectedDeployment.Name
 			}
 
-			_, err = deploymentsClient.Get(ctx, serviceConfig.ResourceGroup, serviceConfig.Service, deleteFlags.name, nil)
+			_, err = deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deleteFlags.name, nil)
 			if err != nil {
 				return fmt.Errorf("deployment '%s' not found", deleteFlags.name)
 			}
@@ -351,7 +255,7 @@ func newDeploymentCommand() *cobra.Command {
 					return ux.Skipped, ux.ErrCancelled
 				}
 
-				poller, err := deploymentsClient.BeginDelete(ctx, serviceConfig.ResourceGroup, serviceConfig.Service, deleteFlags.name, nil)
+				poller, err := deploymentsClient.BeginDelete(ctx, aiConfig.ResourceGroup, aiConfig.Service, deleteFlags.name, nil)
 				if err != nil {
 					return ux.Error, err
 				}
@@ -404,14 +308,14 @@ func newDeploymentCommand() *cobra.Command {
 			}
 
 			// Load AI config
-			aiConfig, err := service.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
 			if err != nil {
 				return err
 			}
 
 			// Select model deployment
 			if selectFlags.deploymentName == "" {
-				selectedDeployment, err := service.PromptModelDeployment(ctx, azdContext)
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig)
 				if err != nil {
 					return err
 				}
@@ -422,7 +326,7 @@ func newDeploymentCommand() *cobra.Command {
 			}
 
 			// Update AI Config
-			if err := service.Save(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
 				return err
 			}
 

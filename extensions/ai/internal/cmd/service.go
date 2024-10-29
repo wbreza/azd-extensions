@@ -5,7 +5,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/spf13/cobra"
-	"github.com/wbreza/azd-extensions/extensions/ai/internal/service"
+	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 )
 
@@ -35,10 +35,10 @@ func newServiceCommand() *cobra.Command {
 				return err
 			}
 
-			var aiConfig *service.AiConfig
+			var aiConfig *internal.AiConfig
 
 			if setFlags.subscription == "" || setFlags.resourceGroup == "" || setFlags.serviceName == "" {
-				selectedAccount, err := service.PromptAccount(ctx, azdContext)
+				selectedAccount, err := internal.PromptAccount(ctx, azdContext)
 				if err != nil {
 					return err
 				}
@@ -48,20 +48,20 @@ func newServiceCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig = &service.AiConfig{
+				aiConfig = &internal.AiConfig{
 					Subscription:  parsedResource.SubscriptionID,
 					ResourceGroup: parsedResource.ResourceGroupName,
 					Service:       parsedResource.Name,
 				}
 			} else {
-				aiConfig = &service.AiConfig{
+				aiConfig = &internal.AiConfig{
 					Subscription:  setFlags.subscription,
 					ResourceGroup: setFlags.resourceGroup,
 					Service:       setFlags.serviceName,
 				}
 			}
 
-			if err := service.Save(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
 				return err
 			}
 
@@ -84,14 +84,14 @@ func newServiceCommand() *cobra.Command {
 				return err
 			}
 
-			serviceConfig, err := service.Load(ctx, azdContext)
+			aiConfig, err := internal.LoadAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("Service: %s\n", serviceConfig.Service)
-			fmt.Printf("Resource Group: %s\n", serviceConfig.ResourceGroup)
-			fmt.Printf("Subscription ID: %s\n", serviceConfig.Subscription)
+			fmt.Printf("Service: %s\n", aiConfig.Service)
+			fmt.Printf("Resource Group: %s\n", aiConfig.ResourceGroup)
+			fmt.Printf("Subscription ID: %s\n", aiConfig.Subscription)
 
 			return nil
 		},
