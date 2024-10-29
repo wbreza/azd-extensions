@@ -224,18 +224,26 @@ func (rs *ResourceService) CreateOrUpdateResourceGroup(
 	resourceGroupName string,
 	location string,
 	tags map[string]*string,
-) error {
+) (*ResourceGroup, error) {
 	client, err := rs.createResourceGroupClient(subscriptionId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	_, err = client.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
+	response, err := client.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
 		Location: &location,
 		Tags:     tags,
 	}, nil)
 
-	return err
+	if err != nil {
+		return nil, fmt.Errorf("creating or updating resource group: %w", err)
+	}
+
+	return &ResourceGroup{
+		Id:       *response.ID,
+		Name:     *response.Name,
+		Location: *response.Location,
+	}, nil
 }
 
 func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {

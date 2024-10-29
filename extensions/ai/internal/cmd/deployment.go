@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/ext"
+	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
@@ -86,44 +86,6 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			selectedModel, err := internal.PromptModel(ctx, azdContext, aiConfig)
-			if err != nil {
-				return err
-			}
-
-			selectedSku, err := internal.PromptModelSku(ctx, azdContext, aiConfig, selectedModel)
-			if err != nil {
-				return err
-			}
-			var deploymentName string
-
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
-				Message:      "Enter the name for the deployment",
-				DefaultValue: *selectedModel.Model.Name,
-			})
-
-			deploymentName, err = namePrompt.Ask()
-			if err != nil {
-				return err
-			}
-
-			deployment := armcognitiveservices.Deployment{
-				Name: &deploymentName,
-				SKU: &armcognitiveservices.SKU{
-					Name:     selectedSku.Name,
-					Capacity: selectedSku.Capacity.Default,
-				},
-				Properties: &armcognitiveservices.DeploymentProperties{
-					Model: &armcognitiveservices.DeploymentModel{
-						Format:  selectedModel.Model.Format,
-						Name:    selectedModel.Model.Name,
-						Version: selectedModel.Model.Version,
-					},
-					RaiPolicyName:        to.Ptr("Microsoft.DefaultV2"),
-					VersionUpgradeOption: to.Ptr(armcognitiveservices.DeploymentModelVersionUpgradeOptionOnceNewDefaultVersionAvailable),
-				},
-			}
-
 			fmt.Println()
 
 			taskList := ux.NewTaskList(&ux.DefaultTaskListConfig)
@@ -132,48 +94,12 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			credential, err := azdContext.Credential()
-			if err != nil {
-				return err
-			}
-
-			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, nil)
-			if err != nil {
-				return err
-			}
-
-			taskList.AddTask(fmt.Sprintf("Creating deployment %s", deploymentName), func() (ux.TaskState, error) {
-
-				deploymentsClient := clientFactory.NewDeploymentsClient()
-
-				existingDeployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, nil)
-				if err == nil && *existingDeployment.Name == deploymentName {
-					return ux.Error, errors.New("deployment with the same name already exists")
-				}
-
-				poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, deployment, nil)
-				if err != nil {
-					return ux.Error, err
-				}
-
-				if _, err := poller.PollUntilDone(ctx, nil); err != nil {
-					return ux.Error, err
-				}
-
-				return ux.Success, nil
+			modelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &prompt.PromptSelectOptions{
+				ForceNewResource: to.Ptr(true),
 			})
 
-			for {
-				if taskList.Completed() {
-					if err := taskList.Update(); err != nil {
-						return err
-					}
-
-					fmt.Println()
-					color.Green("Deployment '%s' created successfully", deploymentName)
-					break
-				}
-			}
+			fmt.Println()
+			color.Green("Deployment '%s' created successfully", *modelDeployment.Name)
 
 			return nil
 		},
@@ -215,7 +141,9 @@ func newDeploymentCommand() *cobra.Command {
 			deploymentsClient := clientFactory.NewDeploymentsClient()
 
 			if deleteFlags.name == "" {
-				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig)
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &prompt.PromptSelectOptions{
+					AllowNewResource: to.Ptr(false),
+				})
 				if err != nil {
 					return err
 				}
@@ -315,7 +243,7 @@ func newDeploymentCommand() *cobra.Command {
 
 			// Select model deployment
 			if selectFlags.deploymentName == "" {
-				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig)
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, nil)
 				if err != nil {
 					return err
 				}
