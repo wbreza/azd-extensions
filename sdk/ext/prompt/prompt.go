@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/fatih/color"
 	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ux"
@@ -304,25 +305,25 @@ func PromptResourceGroup(ctx context.Context, subscription *azure.Subscription, 
 				return nil, err
 			}
 
-			spinner := ux.NewSpinner(&ux.SpinnerConfig{
-				Text: "Creating resource group...",
-			})
-
 			var resourceGroup *azure.ResourceGroup
 
-			err = spinner.Run(ctx, func(ctx context.Context) error {
-				newResourceGroup, err := resourceService.CreateOrUpdateResourceGroup(ctx, subscription.Id, resourceGroupName, location.Name, nil)
-				if err != nil {
-					return err
-				}
+			taskName := fmt.Sprintf("Creating resource group %s", color.CyanString(resourceGroupName))
 
-				resourceGroup = newResourceGroup
-				return nil
-			})
+			fmt.Println()
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						newResourceGroup, err := resourceService.CreateOrUpdateResourceGroup(ctx, subscription.Id, resourceGroupName, location.Name, nil)
+						if err != nil {
+							return ux.Error, err
+						}
 
-			if err != nil {
-				return nil, err
-			}
+						resourceGroup = newResourceGroup
+						return ux.Success, nil
+					},
+				}).
+				Run()
 
 			return resourceGroup, nil
 		},
@@ -499,6 +500,7 @@ func PromptResourceGroupResource(ctx context.Context, resourceGroup *azure.Resou
 		DisplayResource: func(resource *azure.ResourceExtended) (string, error) {
 			return resource.Name, nil
 		},
+		CreateResource: options.CreateResource,
 	})
 
 	if err != nil {

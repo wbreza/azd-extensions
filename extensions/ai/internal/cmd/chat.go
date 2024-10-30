@@ -65,7 +65,7 @@ func newChatCommand() *cobra.Command {
 					Service:       chatFlags.serviceName,
 				}
 			} else {
-				aiConfig, err = internal.LoadOrPrompt(ctx, azdContext)
+				aiConfig, err = internal.LoadOrPromptAiConfig(ctx, azdContext)
 				if err != nil {
 					return err
 				}

@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -20,6 +21,7 @@ type TaskListConfig struct {
 	WarningStyle string
 	RunningStyle string
 	SkippedStyle string
+	PendingStyle string
 }
 
 var DefaultTaskListConfig TaskListConfig = TaskListConfig{
@@ -28,15 +30,25 @@ var DefaultTaskListConfig TaskListConfig = TaskListConfig{
 	ErrorStyle:   color.RedString("(x) Error "),
 	WarningStyle: color.YellowString("(!) Warning "),
 	RunningStyle: color.CyanString("(-) Running "),
-	SkippedStyle: color.HiBlackString("(o) Skipped "),
+	SkippedStyle: color.HiBlackString("(-) Skipped "),
+	PendingStyle: color.HiBlackString("(o) Pending "),
 }
 
 type TaskList struct {
-	canvas Canvas
-
+	canvas    Canvas
+	waitGroup sync.WaitGroup
 	config    *TaskListConfig
-	tasks     []*Task
+	allTasks  []*Task
+	syncTasks []*Task // Queue for synchronous tasks
+
 	completed int32
+	syncMutex sync.Mutex // Mutex to handle sync task queue safely
+}
+
+type TaskOptions struct {
+	Title  string
+	Action func() (TaskState, error)
+	Async  bool
 }
 
 type Task struct {
@@ -51,7 +63,8 @@ type Task struct {
 type TaskState int
 
 const (
-	Running TaskState = iota
+	Pending TaskState = iota
+	Running
 	Skipped
 	Warning
 	Error
@@ -60,6 +73,11 @@ const (
 
 func NewTaskList(config *TaskListConfig) *TaskList {
 	mergedConfig := TaskListConfig{}
+
+	if config == nil {
+		config = &TaskListConfig{}
+	}
+
 	if err := mergo.Merge(&mergedConfig, config, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
@@ -69,7 +87,12 @@ func NewTaskList(config *TaskListConfig) *TaskList {
 	}
 
 	return &TaskList{
-		config: &mergedConfig,
+		config:    &mergedConfig,
+		waitGroup: sync.WaitGroup{},
+		allTasks:  []*Task{},
+		syncTasks: []*Task{},
+		syncMutex: sync.Mutex{},
+		completed: 0,
 	}
 }
 
@@ -78,56 +101,72 @@ func (t *TaskList) WithCanvas(canvas Canvas) Visual {
 	return t
 }
 
+// Run executes all async tasks first and then runs queued sync tasks sequentially.
 func (t *TaskList) Run() error {
 	if t.canvas == nil {
 		t.canvas = NewCanvas(t)
 	}
 
-	return t.canvas.Run()
-}
-
-func (t *TaskList) AddTask(title string, action func() (TaskState, error)) *TaskList {
-	if t.canvas == nil {
-		t.canvas = NewCanvas(t)
-	}
-
-	task := &Task{
-		Title:  title,
-		Action: action,
-		State:  Running,
+	if err := t.canvas.Run(); err != nil {
+		return err
 	}
 
 	go func() {
-		task.startTime = Ptr(time.Now())
-		state, err := task.Action()
-		task.endTime = Ptr(time.Now())
+		for {
+			if t.Completed() {
+				t.Update()
+				break
+			}
 
-		if err != nil {
-			task.Error = err
+			time.Sleep(1 * time.Second)
+			t.Update()
 		}
-
-		task.State = state
-
-		atomic.AddInt32(&t.completed, 1)
-		t.canvas.Update()
 	}()
 
-	t.tasks = append(t.tasks, task)
-	t.canvas.Update()
+	t.waitGroup.Wait()
+
+	// Run sync tasks after async tasks are completed
+	t.runSyncTasks()
+
+	return nil
+}
+
+// AddTask adds a task to the task list and manages async/sync execution.
+func (t *TaskList) AddTask(options TaskOptions) *TaskList {
+	task := &Task{
+		Title:  options.Title,
+		Action: options.Action,
+		State:  Pending,
+	}
+
+	// Differentiate between async and sync tasks
+	if options.Async {
+		t.addAsyncTask(task)
+	} else {
+		t.addSyncTask(task)
+	}
+
+	t.allTasks = append(t.allTasks, task)
+	t.Update()
 
 	return t
 }
 
+// Completed checks if all async tasks are complete.
 func (t *TaskList) Completed() bool {
-	return int(t.completed) == len(t.tasks)
+	return int(t.completed) == len(t.allTasks)
 }
 
 func (t *TaskList) Update() error {
+	if t.canvas == nil {
+		t.canvas = NewCanvas(t)
+	}
+
 	return t.canvas.Update()
 }
 
 func (t *TaskList) Render(printer Printer) error {
-	for _, task := range t.tasks {
+	for _, task := range t.allTasks {
 		endTime := time.Now()
 		if task.endTime != nil {
 			endTime = *task.endTime
@@ -140,6 +179,8 @@ func (t *TaskList) Render(printer Printer) error {
 		}
 
 		switch task.State {
+		case Pending:
+			printer.Fprintf("%s %s\n", t.config.PendingStyle, task.Title)
 		case Running:
 			printer.Fprintf("%s %s %s\n", t.config.RunningStyle, task.Title, elapsedText)
 		case Warning:
@@ -154,6 +195,56 @@ func (t *TaskList) Render(printer Printer) error {
 	}
 
 	return nil
+}
+
+// runSyncTasks executes all synchronous tasks in order after async tasks are completed.
+func (t *TaskList) runSyncTasks() {
+	t.syncMutex.Lock()
+	defer t.syncMutex.Unlock()
+
+	for _, task := range t.syncTasks {
+		task.startTime = Ptr(time.Now())
+		task.State = Running
+
+		state, err := task.Action()
+
+		task.endTime = Ptr(time.Now())
+		task.Error = err
+		task.State = state
+
+		atomic.AddInt32(&t.completed, 1)
+
+		t.Update()
+	}
+}
+
+// addAsyncTask adds an asynchronous task and starts its execution in a goroutine.
+func (t *TaskList) addAsyncTask(task *Task) {
+	t.waitGroup.Add(1)
+	go func() {
+		defer t.waitGroup.Done()
+
+		task.startTime = Ptr(time.Now())
+		task.State = Running
+
+		state, err := task.Action()
+
+		task.endTime = Ptr(time.Now())
+		task.Error = err
+		task.State = state
+
+		atomic.AddInt32(&t.completed, 1)
+
+		_ = t.Update()
+	}()
+}
+
+// addSyncTask queues a synchronous task for execution after async completion.
+func (t *TaskList) addSyncTask(task *Task) {
+	t.syncMutex.Lock()
+	defer t.syncMutex.Unlock()
+
+	t.syncTasks = append(t.syncTasks, task)
 }
 
 // DurationAsText provides a slightly nicer string representation of a duration

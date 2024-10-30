@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
@@ -31,7 +30,7 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
 			}
@@ -81,7 +80,7 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
 			}
@@ -97,6 +96,14 @@ func newDeploymentCommand() *cobra.Command {
 			modelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &prompt.PromptSelectOptions{
 				ForceNewResource: to.Ptr(true),
 			})
+			if err != nil {
+				return err
+			}
+
+			aiConfig.Model = *modelDeployment.Name
+			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+				return err
+			}
 
 			fmt.Println()
 			color.Green("Deployment '%s' created successfully", *modelDeployment.Name)
@@ -123,7 +130,7 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
 			}
@@ -170,47 +177,37 @@ func newDeploymentCommand() *cobra.Command {
 				}
 			}
 
+			taskName := fmt.Sprintf("Deleting deployment %s", color.CyanString(deleteFlags.name))
+
 			fmt.Println()
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						if !*confirmed {
+							return ux.Skipped, ux.ErrCancelled
+						}
 
-			taskList := ux.NewTaskList(&ux.DefaultTaskListConfig)
+						poller, err := deploymentsClient.BeginDelete(ctx, aiConfig.ResourceGroup, aiConfig.Service, deleteFlags.name, nil)
+						if err != nil {
+							return ux.Error, err
+						}
 
-			if err := taskList.Run(); err != nil {
+						if _, err := poller.PollUntilDone(ctx, nil); err != nil {
+							return ux.Error, err
+						}
+
+						return ux.Success, nil
+					},
+				}).
+				Run()
+
+			if err != nil {
 				return err
 			}
 
-			taskList.AddTask(fmt.Sprintf("Deleting deployment %s", deleteFlags.name), func() (ux.TaskState, error) {
-				if !*confirmed {
-					return ux.Skipped, ux.ErrCancelled
-				}
-
-				poller, err := deploymentsClient.BeginDelete(ctx, aiConfig.ResourceGroup, aiConfig.Service, deleteFlags.name, nil)
-				if err != nil {
-					return ux.Error, err
-				}
-
-				if _, err := poller.PollUntilDone(ctx, nil); err != nil {
-					return ux.Error, err
-				}
-
-				return ux.Success, nil
-			})
-
-			for {
-				if taskList.Completed() {
-					if err := taskList.Update(); err != nil {
-						return err
-					}
-
-					fmt.Println()
-					color.Green("Deployment '%s' deleted successfully", deleteFlags.name)
-					break
-				}
-
-				time.Sleep(1 * time.Second)
-				if err := taskList.Update(); err != nil {
-					return err
-				}
-			}
+			fmt.Println()
+			color.Green("Deployment '%s' deleted successfully", deleteFlags.name)
 
 			return nil
 		},
@@ -236,7 +233,7 @@ func newDeploymentCommand() *cobra.Command {
 			}
 
 			// Load AI config
-			aiConfig, err := internal.LoadOrPrompt(ctx, azdContext)
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
 			}
@@ -254,7 +251,21 @@ func newDeploymentCommand() *cobra.Command {
 			}
 
 			// Update AI Config
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			fmt.Println()
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: "Save AI configuration",
+					Action: func() (ux.TaskState, error) {
+						if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+							return ux.Error, err
+						}
+
+						return ux.Success, nil
+					},
+				}).
+				Run()
+
+			if err != nil {
 				return err
 			}
 

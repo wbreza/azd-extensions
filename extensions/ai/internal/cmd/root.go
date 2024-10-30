@@ -19,6 +19,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newModelCommand())
 	rootCmd.AddCommand(newServiceCommand())
 	rootCmd.AddCommand(newChatCommand())
+	rootCmd.AddCommand(newDocumentCommand())
 
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 

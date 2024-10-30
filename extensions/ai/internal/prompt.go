@@ -9,14 +9,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
+	"github.com/fatih/color"
 	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
-func PromptAccount(ctx context.Context, azdContext *ext.Context) (*armcognitiveservices.Account, error) {
-	subscription, err := prompt.PromptSubscription(ctx, nil)
+func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armcognitiveservices.Account, error) {
+	subscription, err := LoadOrPromptSubscription(ctx, azdContext, aiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -26,12 +28,19 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context) (*armcognitives
 		return nil, err
 	}
 
-	selectedAccount, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
+	accountsClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var aiService *armcognitiveservices.Account
+
+	selectedResource, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
 		ResourceType:            to.Ptr(azure.ResourceTypeCognitiveServiceAccount),
 		Kinds:                   []string{"OpenAI", "AIService", "CognitiveServices"},
 		ResourceTypeDisplayName: "Azure AI service",
 		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
-			resourceGroup, err := prompt.PromptResourceGroup(ctx, subscription, nil)
+			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
 			if err != nil {
 				return nil, err
 			}
@@ -45,85 +54,79 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context) (*armcognitives
 				return nil, err
 			}
 
-			spinner := ux.NewSpinner(&ux.SpinnerConfig{
-				Text: "Creating Azure AI service account...",
-			})
+			taskName := fmt.Sprintf("Creating Azure AI service account %s", color.CyanString(accountName))
 
-			var aiService *azure.ResourceExtended
+			fmt.Println()
+			err = ux.NewTaskList(nil).AddTask(ux.TaskOptions{
+				Title: taskName,
+				Action: func() (ux.TaskState, error) {
+					account := armcognitiveservices.Account{
+						Name: &accountName,
+						Identity: &armcognitiveservices.Identity{
+							Type: to.Ptr(armcognitiveservices.ResourceIdentityTypeSystemAssigned),
+						},
+						Location: &resourceGroup.Location,
+						Kind:     to.Ptr("OpenAI"),
+						SKU: &armcognitiveservices.SKU{
+							Name: to.Ptr("S0"),
+						},
+						Properties: &armcognitiveservices.AccountProperties{
+							CustomSubDomainName: &accountName,
+							PublicNetworkAccess: to.Ptr(armcognitiveservices.PublicNetworkAccessEnabled),
+							DisableLocalAuth:    to.Ptr(false),
+						},
+					}
 
-			err = spinner.Run(ctx, func(ctx context.Context) error {
-				accountsClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, nil)
-				if err != nil {
-					return err
-				}
+					poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, account, nil)
+					if err != nil {
+						return ux.Error, err
+					}
 
-				account := armcognitiveservices.Account{
-					Name: &accountName,
-					Identity: &armcognitiveservices.Identity{
-						Type: to.Ptr(armcognitiveservices.ResourceIdentityTypeSystemAssigned),
-					},
-					Location: &resourceGroup.Location,
-					Kind:     to.Ptr("OpenAI"),
-					SKU: &armcognitiveservices.SKU{
-						Name: to.Ptr("S0"),
-					},
-					Properties: &armcognitiveservices.AccountProperties{
-						CustomSubDomainName: &accountName,
-						PublicNetworkAccess: to.Ptr(armcognitiveservices.PublicNetworkAccessEnabled),
-						DisableLocalAuth:    to.Ptr(false),
-					},
-				}
+					accountResponse, err := poller.PollUntilDone(ctx, nil)
+					if err != nil {
+						return ux.Error, err
+					}
 
-				poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, account, nil)
-				if err != nil {
-					return err
-				}
+					aiService = &accountResponse.Account
 
-				accountResponse, err := poller.PollUntilDone(ctx, nil)
-				if err != nil {
-					return err
-				}
-
-				aiService = &azure.ResourceExtended{
-					Resource: azure.Resource{
-						Id:       *accountResponse.ID,
-						Name:     *accountResponse.Name,
-						Type:     *accountResponse.Type,
-						Location: *accountResponse.Location,
-					},
-					Kind: *accountResponse.Kind,
-				}
-
-				return nil
-			})
+					return ux.Success, nil
+				},
+			}).Run()
 
 			if err != nil {
 				return nil, err
 			}
 
-			return aiService, nil
+			return &azure.ResourceExtended{
+				Resource: azure.Resource{
+					Id:       *aiService.ID,
+					Name:     *aiService.Name,
+					Type:     *aiService.Type,
+					Location: *aiService.Location,
+				},
+				Kind: *aiService.Kind,
+			}, nil
 		},
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	parsedService, err := arm.ParseResourceID(selectedAccount.Id)
-	if err != nil {
-		return nil, err
+	if aiService == nil {
+		parsedResource, err := arm.ParseResourceID(selectedResource.Id)
+		if err != nil {
+			return nil, err
+		}
+
+		existingAccount, err := accountsClient.Get(ctx, parsedResource.ResourceGroupName, parsedResource.Name, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		aiService = &existingAccount.Account
 	}
 
-	accountClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	accountResponse, err := accountClient.Get(ctx, parsedService.ResourceGroupName, parsedService.Name, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &accountResponse.Account, nil
+	return aiService, nil
 }
 
 func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, options *prompt.PromptSelectOptions) (*armcognitiveservices.Deployment, error) {
@@ -212,31 +215,35 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 				},
 			}
 
-			spinner := ux.NewSpinner(&ux.SpinnerConfig{
-				Text: "Deploying AI model...",
-			})
-
 			var modelDeployment *armcognitiveservices.Deployment
 
-			err = spinner.Run(ctx, func(ctx context.Context) error {
-				existingDeployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, nil)
-				if err == nil && *existingDeployment.Name == deploymentName {
-					return errors.New("deployment with the same name already exists")
-				}
+			taskName := fmt.Sprintf("Creating model deployment %s", color.CyanString(deploymentName))
 
-				poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, deployment, nil)
-				if err != nil {
-					return err
-				}
+			fmt.Println()
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						existingDeployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, nil)
+						if err == nil && *existingDeployment.Name == deploymentName {
+							return ux.Error, errors.New("deployment with the same name already exists")
+						}
 
-				deploymentResponse, err := poller.PollUntilDone(ctx, nil)
-				if err != nil {
-					return err
-				}
+						poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, deployment, nil)
+						if err != nil {
+							return ux.Error, err
+						}
 
-				modelDeployment = &deploymentResponse.Deployment
-				return nil
-			})
+						deploymentResponse, err := poller.PollUntilDone(ctx, nil)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						modelDeployment = &deploymentResponse.Deployment
+						return ux.Success, nil
+					},
+				}).
+				Run()
 
 			if err != nil {
 				return nil, err
@@ -309,6 +316,224 @@ func PromptModelSku(ctx context.Context, azdContext *ext.Context, aiConfig *AiCo
 		},
 		DisplayResource: func(sku *armcognitiveservices.ModelSKU) (string, error) {
 			return *sku.Name, nil
+		},
+	})
+}
+
+func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.Account, error) {
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	principal, err := azdContext.Principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	accountsClient, err := armstorage.NewAccountsClient(aiConfig.Subscription, credential, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armstorage.Account]{
+		SelectorOptions: &prompt.PromptSelectOptions{
+			Message:            "Select a storage account",
+			LoadingMessage:     "Loading storage accounts...",
+			AllowNewResource:   to.Ptr(true),
+			NewResourceMessage: "Create a new storage account",
+			CreatingMessage:    "Creating storage account...",
+		},
+		LoadData: func(ctx context.Context) ([]*armstorage.Account, error) {
+			storageAccounts := []*armstorage.Account{}
+
+			pager := accountsClient.NewListPager(nil)
+			for pager.More() {
+				pageResponse, err := pager.NextPage(ctx)
+				if err != nil {
+					return nil, err
+				}
+
+				storageAccounts = append(storageAccounts, pageResponse.Value...)
+			}
+
+			return storageAccounts, nil
+		},
+		DisplayResource: func(resource *armstorage.Account) (string, error) {
+			return *resource.Name, nil
+		},
+		CreateResource: func(ctx context.Context) (*armstorage.Account, error) {
+			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+				Message: "Enter the name for the storage account",
+			})
+
+			accountName, err := namePrompt.Ask()
+			if err != nil {
+				return nil, err
+			}
+
+			taskName := fmt.Sprintf("Creating storage account %s", color.CyanString(accountName))
+
+			var storageAccount *armstorage.Account
+
+			fmt.Println()
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						accountCreateParams := armstorage.AccountCreateParameters{
+							Location: &resourceGroup.Location,
+							SKU: &armstorage.SKU{
+								Name: to.Ptr(armstorage.SKUNameStandardLRS),
+							},
+							Kind: to.Ptr(armstorage.KindStorageV2),
+							Properties: &armstorage.AccountPropertiesCreateParameters{
+								AccessTier:            to.Ptr(armstorage.AccessTierHot),
+								AllowBlobPublicAccess: to.Ptr(true),
+								MinimumTLSVersion:     to.Ptr(armstorage.MinimumTLSVersionTLS12),
+								PublicNetworkAccess:   to.Ptr(armstorage.PublicNetworkAccessEnabled),
+							},
+						}
+
+						poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, accountCreateParams, nil)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						createResponse, err := poller.PollUntilDone(ctx, nil)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						storageAccount = &createResponse.Account
+						return ux.Success, nil
+					},
+				}).
+				AddTask(ux.TaskOptions{
+					Title: "Assigning Storage Blob Data Contributor role",
+					Action: func() (ux.TaskState, error) {
+						rbacClient := azure.NewEntraIdService(credential, nil)
+						err := rbacClient.EnsureRoleAssignment(ctx, aiConfig.Subscription, *storageAccount.ID, principal.Oid, azure.RoleDefinitionStorageBlobDataContributor)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						if err = rbacClient.EnsureRoleAssignment(
+							ctx,
+							aiConfig.Subscription,
+							*storageAccount.ID,
+							principal.Oid,
+							azure.RoleDefinitionStorageBlobDataContributor,
+						); err != nil {
+							return ux.Error, err
+						}
+
+						return ux.Success, nil
+					},
+				}).
+				Run()
+
+			if err != nil {
+				return nil, err
+			}
+
+			return storageAccount, nil
+		},
+	})
+}
+
+func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.BlobContainer, error) {
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	containersClient, err := armstorage.NewBlobContainersClient(aiConfig.Subscription, credential, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armstorage.BlobContainer]{
+		SelectorOptions: &prompt.PromptSelectOptions{
+			Message:            "Select a blob container",
+			LoadingMessage:     "Loading blob containers...",
+			AllowNewResource:   to.Ptr(true),
+			NewResourceMessage: "Create a new blob container",
+			CreatingMessage:    "Creating blob container...",
+		},
+		LoadData: func(ctx context.Context) ([]*armstorage.BlobContainer, error) {
+			blobContainers := []*armstorage.BlobContainer{}
+
+			pager := containersClient.NewListPager(aiConfig.ResourceGroup, aiConfig.StorageAccount, nil)
+			for pager.More() {
+				pageResponse, err := pager.NextPage(ctx)
+				if err != nil {
+					return nil, err
+				}
+
+				for _, container := range pageResponse.Value {
+					blobContainers = append(blobContainers, &armstorage.BlobContainer{
+						ID:                  container.ID,
+						Name:                container.Name,
+						Type:                container.Type,
+						Etag:                container.Etag,
+						ContainerProperties: container.Properties,
+					})
+				}
+			}
+
+			return blobContainers, nil
+		},
+		DisplayResource: func(resource *armstorage.BlobContainer) (string, error) {
+			return *resource.Name, nil
+		},
+		CreateResource: func(ctx context.Context) (*armstorage.BlobContainer, error) {
+			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+				Message: "Enter the name for the blob container",
+			})
+
+			containerName, err := namePrompt.Ask()
+			if err != nil {
+				return nil, err
+			}
+
+			taskName := fmt.Sprintf("Creating blob container %s", color.CyanString(containerName))
+
+			var blobContainer *armstorage.BlobContainer
+
+			fmt.Println()
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						newContainer := armstorage.BlobContainer{
+							Name: &containerName,
+							ContainerProperties: &armstorage.ContainerProperties{
+								PublicAccess: to.Ptr(armstorage.PublicAccessNone),
+							},
+						}
+
+						createResponse, err := containersClient.Create(ctx, aiConfig.ResourceGroup, aiConfig.StorageAccount, containerName, newContainer, nil)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						blobContainer = &createResponse.BlobContainer
+						return ux.Success, nil
+					},
+				}).
+				Run()
+
+			if err != nil {
+				return nil, err
+			}
+
+			return blobContainer, nil
 		},
 	})
 }

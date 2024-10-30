@@ -29,7 +29,6 @@ func NewSubscriptionsService(
 }
 
 func (ss *SubscriptionsService) createSubscriptionsClient(ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
-
 	client, err := armsubscriptions.NewClient(ss.credential, ss.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating subscriptions client: %w", err)
@@ -77,7 +76,7 @@ func (s *SubscriptionsService) ListSubscriptions(
 }
 
 func (s *SubscriptionsService) GetSubscription(
-	ctx context.Context, subscriptionId string, tenantId string) (*armsubscriptions.Subscription, error) {
+	ctx context.Context, subscriptionId string, tenantId string) (*Subscription, error) {
 	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
@@ -88,7 +87,12 @@ func (s *SubscriptionsService) GetSubscription(
 		return nil, fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
 	}
 
-	return &subscription.Subscription, nil
+	return &Subscription{
+		Id:                 *subscription.SubscriptionID,
+		Name:               *subscription.DisplayName,
+		TenantId:           *subscription.TenantID,
+		UserAccessTenantId: tenantId,
+	}, nil
 }
 
 // ListSubscriptionLocations lists physical locations in Azure for the given subscription.

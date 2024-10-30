@@ -7,15 +7,18 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/core/config"
 	"github.com/wbreza/azd-extensions/sdk/ext"
+	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 )
 
 type AiConfig struct {
-	Subscription  string `json:"subscription"`
-	ResourceGroup string `json:"resourceGroup"`
-	Service       string `json:"service"`
-	Model         string `json:"model"`
+	Subscription   string `json:"subscription"`
+	ResourceGroup  string `json:"resourceGroup"`
+	Service        string `json:"service"`
+	Model          string `json:"model"`
+	StorageAccount string `json:"storage"`
 }
 
 var (
@@ -24,10 +27,76 @@ var (
 	ErrNoAiServices       = errors.New("no Azure AI services found")
 )
 
-func LoadOrPrompt(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
+func LoadOrPromptSubscription(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*azure.Subscription, error) {
+	var subscription *azure.Subscription
+
+	if aiConfig == nil || aiConfig.Subscription == "" {
+		selectedSubscription, err := prompt.PromptSubscription(ctx, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		subscription = selectedSubscription
+	} else {
+		credential, err := azdContext.Credential()
+		if err != nil {
+			return nil, err
+		}
+
+		principal, err := azdContext.Principal(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		subscriptionService := azure.NewSubscriptionsService(credential, nil)
+		existingSubscription, err := subscriptionService.GetSubscription(ctx, aiConfig.Subscription, principal.TenantId)
+		if err != nil {
+			return nil, err
+		}
+
+		subscription = existingSubscription
+	}
+
+	return subscription, nil
+}
+
+func LoadOrPromptResourceGroup(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*azure.ResourceGroup, error) {
+	subscription, err := LoadOrPromptSubscription(ctx, azdContext, aiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	var resourceGroup *azure.ResourceGroup
+
+	if aiConfig == nil || aiConfig.ResourceGroup == "" {
+		selectedResourceGroup, err := prompt.PromptResourceGroup(ctx, subscription, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		resourceGroup = selectedResourceGroup
+	} else {
+		credential, err := azdContext.Credential()
+		if err != nil {
+			return nil, err
+		}
+
+		resourceGroupService := azure.NewResourceService(credential, nil)
+		existingResourceGroup, err := resourceGroupService.GetResourceGroup(ctx, aiConfig.Subscription, aiConfig.ResourceGroup)
+		if err != nil {
+			return nil, err
+		}
+
+		resourceGroup = existingResourceGroup
+	}
+
+	return resourceGroup, nil
+}
+
+func LoadOrPromptAiConfig(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
 	config, err := LoadAiConfig(ctx, azdContext)
 	if err != nil && errors.Is(err, ErrNotFound) {
-		account, err := PromptAccount(ctx, azdContext)
+		account, err := PromptAccount(ctx, azdContext, nil)
 		if err != nil {
 			return nil, err
 		}
