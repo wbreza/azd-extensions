@@ -309,7 +309,6 @@ func PromptResourceGroup(ctx context.Context, subscription *azure.Subscription, 
 
 			taskName := fmt.Sprintf("Creating resource group %s", color.CyanString(resourceGroupName))
 
-			fmt.Println()
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,

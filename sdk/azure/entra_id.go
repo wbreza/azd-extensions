@@ -3,16 +3,22 @@ package azure
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v3"
 	"github.com/google/uuid"
 )
 
+type RoleName string
+
 const (
-	RoleDefinitionStorageBlobDataContributor string = "ba92f5b4-2d11-453d-a403-e96b0029c9fe"
+	RoleDefinitionStorageBlobDataContributor RoleName = "Storage Blob Data Contributor"
+	RoleCognitiveServicesOpenAIContributor            = "Cognitive Services OpenAI Contributor"
 )
 
 type EntraIdService struct {
@@ -30,19 +36,22 @@ func NewEntraIdService(
 	}
 }
 
-func (eis *EntraIdService) EnsureRoleAssignment(ctx context.Context, subscriptionId string, scope string, principalId string, roleDefinitionId string) error {
+func (eis *EntraIdService) EnsureRoleAssignment(ctx context.Context, subscriptionId string, scope string, principalId string, roleName RoleName) error {
 	authClient, err := armauthorization.NewClientFactory(subscriptionId, eis.credential, eis.armClientOptions)
 	if err != nil {
 		return err
 	}
 
 	rbacClient := authClient.NewRoleAssignmentsClient()
+	roleDefinitionId, err := eis.getRoleDefinitionId(ctx, subscriptionId, roleName)
+	if err != nil {
+		return err
+	}
 
 	_, err = rbacClient.Create(ctx, scope, uuid.New().String(), armauthorization.RoleAssignmentCreateParameters{
 		Properties: &armauthorization.RoleAssignmentProperties{
 			PrincipalID:      &principalId,
 			RoleDefinitionID: &roleDefinitionId,
-			Scope:            &scope,
 		},
 	}, nil)
 
@@ -58,4 +67,33 @@ func (eis *EntraIdService) EnsureRoleAssignment(ctx context.Context, subscriptio
 	}
 
 	return nil
+}
+
+func (eis *EntraIdService) getRoleDefinitionId(ctx context.Context, subscriptionId string, roleName RoleName) (string, error) {
+	authClient, err := armauthorization.NewClientFactory(subscriptionId, eis.credential, eis.armClientOptions)
+	if err != nil {
+		return "", err
+	}
+
+	rolesClient := authClient.NewRoleDefinitionsClient()
+	scope := fmt.Sprintf("/subscriptions/%s", subscriptionId)
+
+	pager := rolesClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
+		Filter: to.Ptr(fmt.Sprintf("roleName eq '%s'", roleName)),
+	})
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return "", err
+		}
+
+		for _, roleDefinition := range page.Value {
+			if strings.EqualFold(*roleDefinition.Properties.RoleName, string(roleName)) {
+				return *roleDefinition.ID, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("role definition not found for role name: %s", roleName)
 }

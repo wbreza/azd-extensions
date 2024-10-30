@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/wbreza/azd-extensions/sdk/azure"
@@ -144,6 +146,10 @@ func (c *Context) SaveUserConfig(ctx context.Context, userConfig config.UserConf
 	return err
 }
 
+func (c *Context) Invoke(resolver any) error {
+	return c.container.Invoke(resolver)
+}
+
 func registerComponents(ctx context.Context, container *ioc.NestedContainer) error {
 	container.MustRegisterSingleton(func() ioc.ServiceLocator {
 		return container
@@ -155,6 +161,14 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(config.NewFileConfigManager)
 	container.MustRegisterSingleton(config.NewManager)
 	container.MustRegisterSingleton(config.NewUserConfigManager)
+
+	container.MustRegisterSingleton(azure.NewResourceService)
+	container.MustRegisterSingleton(azure.NewSubscriptionsService)
+	container.MustRegisterSingleton(azure.NewEntraIdService)
+
+	container.MustRegisterSingleton(func() (azcore.TokenCredential, error) {
+		return current.Credential()
+	})
 
 	container.MustRegisterSingleton(func(azdContext *azd.Context) (*project.ProjectConfig, error) {
 		if azdContext == nil {
@@ -206,6 +220,41 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 		}
 
 		return remoteStateConfig, nil
+	})
+
+	ioc.RegisterInstance[policy.Transporter](container, http.DefaultClient)
+	ioc.RegisterInstance(container, azure.AzurePublic())
+
+	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *azure.Cloud) *arm.ClientOptions {
+		return &arm.ClientOptions{
+			ClientOptions: azcore.ClientOptions{
+				Cloud: cloud.Configuration,
+				Logging: policy.LogOptions{
+					AllowedHeaders: []string{azure.MsCorrelationIdHeader},
+					IncludeBody:    true,
+				},
+				PerCallPolicies: []policy.Policy{
+					azure.NewMsCorrelationPolicy(),
+					azure.NewUserAgentPolicy("azd"),
+				},
+				Transport: transport,
+			},
+		}
+	})
+
+	container.MustRegisterSingleton(func(transport policy.Transporter, cloud *azure.Cloud) *azcore.ClientOptions {
+		return &azcore.ClientOptions{
+			Cloud: cloud.Configuration,
+			Logging: policy.LogOptions{
+				AllowedHeaders: []string{azure.MsCorrelationIdHeader},
+				IncludeBody:    true,
+			},
+			PerCallPolicies: []policy.Policy{
+				azure.NewMsCorrelationPolicy(),
+				azure.NewUserAgentPolicy("azd"),
+			},
+			Transport: transport,
+		}
 	})
 
 	return nil

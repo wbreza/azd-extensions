@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -52,6 +53,13 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
+			var armClientOptions *arm.ClientOptions
+
+			azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+				armClientOptions = clientOptions
+				return nil
+			})
+
 			credential, err := azdContext.Credential()
 			if err != nil {
 				return err
@@ -72,11 +80,15 @@ func newChatCommand() *cobra.Command {
 			}
 
 			if chatFlags.modelName != "" {
-				aiConfig.Model = chatFlags.modelName
+				aiConfig.Models.ChatCompletion = chatFlags.modelName
 			}
 
-			if aiConfig.Model == "" {
-				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, nil)
+			if aiConfig.Models.ChatCompletion == "" {
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+					Capabilities: []string{
+						"chatCompletion",
+					},
+				})
 				if err != nil {
 					if errors.Is(err, internal.ErrNoModelDeployments) {
 						return &ext.ErrorWithSuggestion{
@@ -87,7 +99,7 @@ func newChatCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig.Model = *selectedDeployment.Name
+				aiConfig.Models.ChatCompletion = *selectedDeployment.Name
 				if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
 					return err
 				}
@@ -102,7 +114,7 @@ func newChatCommand() *cobra.Command {
 
 			loadingSpinner.Start(ctx)
 
-			accountClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, nil)
+			accountClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
@@ -126,12 +138,12 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, nil)
+			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
 
-			deployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, aiConfig.Model, nil)
+			deployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, aiConfig.Models.ChatCompletion, nil)
 			if err != nil {
 				return err
 			}
@@ -139,7 +151,7 @@ func newChatCommand() *cobra.Command {
 			loadingSpinner.Stop(ctx)
 
 			fmt.Printf("AI Service: %s %s\n", color.CyanString(aiConfig.Service), color.HiBlackString("(%s)", aiConfig.ResourceGroup))
-			fmt.Printf("Model: %s %s\n", color.CyanString(aiConfig.Model), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
+			fmt.Printf("Model: %s %s\n", color.CyanString(aiConfig.Models.ChatCompletion), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
 			fmt.Printf("System Message: %s\n", color.CyanString(chatFlags.systemMessage))
 			fmt.Printf("Temperature: %s %s\n", color.CyanString(fmt.Sprint(chatFlags.temperature)), color.HiBlackString("(Controls randomness)"))
 			fmt.Printf("Max Tokens: %s %s\n", color.CyanString(fmt.Sprint(chatFlags.maxTokens)), color.HiBlackString("(Maximum number of tokens to generate)"))
@@ -191,7 +203,7 @@ func newChatCommand() *cobra.Command {
 				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
 					response, err := chatClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
 						Messages:       messages,
-						DeploymentName: &aiConfig.Model,
+						DeploymentName: &aiConfig.Models.ChatCompletion,
 						Temperature:    &chatFlags.temperature,
 						ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
 						MaxTokens:      &chatFlags.maxTokens,

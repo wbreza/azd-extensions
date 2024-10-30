@@ -23,14 +23,32 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 		return nil, err
 	}
 
+	principal, err := azdContext.Principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
 	}
 
-	accountsClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, nil)
+	var armClientOptions *arm.ClientOptions
+
+	azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+		armClientOptions = clientOptions
+		return nil
+	})
+
+	accountsClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, armClientOptions)
 	if err != nil {
 		return nil, err
+	}
+
+	if aiConfig == nil {
+		aiConfig = &AiConfig{
+			Subscription: subscription.Id,
+		}
 	}
 
 	var aiService *armcognitiveservices.Account
@@ -45,6 +63,8 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 				return nil, err
 			}
 
+			aiConfig.ResourceGroup = resourceGroup.Name
+
 			namePrompt := ux.NewPrompt(&ux.PromptConfig{
 				Message: "Enter the name for the Azure AI service account",
 			})
@@ -56,42 +76,68 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 
 			taskName := fmt.Sprintf("Creating Azure AI service account %s", color.CyanString(accountName))
 
-			fmt.Println()
-			err = ux.NewTaskList(nil).AddTask(ux.TaskOptions{
-				Title: taskName,
-				Action: func() (ux.TaskState, error) {
-					account := armcognitiveservices.Account{
-						Name: &accountName,
-						Identity: &armcognitiveservices.Identity{
-							Type: to.Ptr(armcognitiveservices.ResourceIdentityTypeSystemAssigned),
-						},
-						Location: &resourceGroup.Location,
-						Kind:     to.Ptr("OpenAI"),
-						SKU: &armcognitiveservices.SKU{
-							Name: to.Ptr("S0"),
-						},
-						Properties: &armcognitiveservices.AccountProperties{
-							CustomSubDomainName: &accountName,
-							PublicNetworkAccess: to.Ptr(armcognitiveservices.PublicNetworkAccessEnabled),
-							DisableLocalAuth:    to.Ptr(false),
-						},
-					}
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						account := armcognitiveservices.Account{
+							Name: &accountName,
+							Identity: &armcognitiveservices.Identity{
+								Type: to.Ptr(armcognitiveservices.ResourceIdentityTypeSystemAssigned),
+							},
+							Location: &resourceGroup.Location,
+							Kind:     to.Ptr("OpenAI"),
+							SKU: &armcognitiveservices.SKU{
+								Name: to.Ptr("S0"),
+							},
+							Properties: &armcognitiveservices.AccountProperties{
+								CustomSubDomainName: &accountName,
+								PublicNetworkAccess: to.Ptr(armcognitiveservices.PublicNetworkAccessEnabled),
+								DisableLocalAuth:    to.Ptr(false),
+							},
+						}
 
-					poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, account, nil)
-					if err != nil {
-						return ux.Error, err
-					}
+						poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, account, nil)
+						if err != nil {
+							return ux.Error, err
+						}
 
-					accountResponse, err := poller.PollUntilDone(ctx, nil)
-					if err != nil {
-						return ux.Error, err
-					}
+						accountResponse, err := poller.PollUntilDone(ctx, nil)
+						if err != nil {
+							return ux.Error, err
+						}
 
-					aiService = &accountResponse.Account
+						aiService = &accountResponse.Account
 
-					return ux.Success, nil
-				},
-			}).Run()
+						return ux.Success, nil
+					},
+				}).
+				AddTask(ux.TaskOptions{
+					Title: "Creating role assignments",
+					Action: func() (ux.TaskState, error) {
+						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
+							err := rbacClient.EnsureRoleAssignment(
+								ctx,
+								aiConfig.Subscription,
+								*aiService.ID,
+								principal.Oid,
+								azure.RoleCognitiveServicesOpenAIContributor,
+							)
+							if err != nil {
+								return err
+							}
+
+							return nil
+						})
+
+						if err != nil {
+							return ux.Error, err
+						}
+
+						return ux.Success, nil
+					},
+				}).
+				Run()
 
 			if err != nil {
 				return nil, err
@@ -129,14 +175,23 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 	return aiService, nil
 }
 
-func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, options *prompt.PromptSelectOptions) (*armcognitiveservices.Deployment, error) {
-	mergedOptions := &prompt.PromptSelectOptions{}
+type PromptModelDeploymentOptions struct {
+	SelectorOptions *prompt.PromptSelectOptions
+	Capabilities    []string
+}
 
+func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, options *PromptModelDeploymentOptions) (*armcognitiveservices.Deployment, error) {
 	if options == nil {
-		options = &prompt.PromptSelectOptions{}
+		options = &PromptModelDeploymentOptions{}
 	}
 
-	defaultOptions := &prompt.PromptSelectOptions{
+	if options.SelectorOptions == nil {
+		options.SelectorOptions = &prompt.PromptSelectOptions{}
+	}
+
+	mergedSelectorOptions := &prompt.PromptSelectOptions{}
+
+	defaultSelectorOptions := &prompt.PromptSelectOptions{
 		Message:            "Select an AI model deployment",
 		LoadingMessage:     "Loading model deployments...",
 		AllowNewResource:   to.Ptr(true),
@@ -144,21 +199,27 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 		CreatingMessage:    "Deploying AI model...",
 	}
 
-	mergo.Merge(mergedOptions, options, mergo.WithoutDereference)
-	mergo.Merge(mergedOptions, defaultOptions, mergo.WithoutDereference)
+	mergo.Merge(mergedSelectorOptions, options.SelectorOptions, mergo.WithoutDereference)
+	mergo.Merge(mergedSelectorOptions, defaultSelectorOptions, mergo.WithoutDereference)
 
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
 	}
 
-	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, nil)
+	var armClientOptions *arm.ClientOptions
+	azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+		armClientOptions = clientOptions
+		return nil
+	})
+
+	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armcognitiveservices.Deployment]{
-		SelectorOptions: mergedOptions,
+		SelectorOptions: mergedSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*armcognitiveservices.Deployment, error) {
 			deploymentList := []*armcognitiveservices.Deployment{}
 			modelPager := deploymentsClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Service, nil)
@@ -168,7 +229,20 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 					return nil, err
 				}
 
-				deploymentList = append(deploymentList, models.Value...)
+				for _, model := range models.Value {
+					if len(options.Capabilities) == 0 {
+						deploymentList = append(deploymentList, model)
+						continue
+					}
+
+					// Filter models by specified capabilities
+					// Must match all capabilities
+					for _, capability := range options.Capabilities {
+						if _, has := model.Properties.Capabilities[capability]; has {
+							deploymentList = append(deploymentList, model)
+						}
+					}
+				}
 			}
 
 			return deploymentList, nil
@@ -177,7 +251,9 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 			return fmt.Sprintf("%s (Model: %s, Version: %s)", *resource.Name, *resource.Properties.Model.Name, *resource.Properties.Model.Version), nil
 		},
 		CreateResource: func(ctx context.Context) (*armcognitiveservices.Deployment, error) {
-			selectedModel, err := PromptModel(ctx, azdContext, aiConfig)
+			selectedModel, err := PromptModel(ctx, azdContext, aiConfig, &PromptModelOptions{
+				Capabilities: options.Capabilities,
+			})
 			if err != nil {
 				return nil, err
 			}
@@ -219,7 +295,6 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 
 			taskName := fmt.Sprintf("Creating model deployment %s", color.CyanString(deploymentName))
 
-			fmt.Println()
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
@@ -254,7 +329,23 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 	})
 }
 
-func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armcognitiveservices.Model, error) {
+type PromptModelOptions struct {
+	Capabilities []string
+}
+
+func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, options *PromptModelOptions) (*armcognitiveservices.Model, error) {
+	if options == nil {
+		options = &PromptModelOptions{
+			Capabilities: []string{},
+		}
+	}
+
+	var armClientOptions *arm.ClientOptions
+	azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+		armClientOptions = clientOptions
+		return nil
+	})
+
 	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armcognitiveservices.Model]{
 		SelectorOptions: &prompt.PromptSelectOptions{
 			Message:          "Select a model",
@@ -267,7 +358,7 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 				return nil, err
 			}
 
-			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, nil)
+			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return nil, err
 			}
@@ -290,8 +381,21 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 				}
 
 				for _, model := range pageResponse.Value {
-					if *model.Kind == *aiService.Kind {
+					if *model.Kind != *aiService.Kind {
+						continue
+					}
+
+					if len(options.Capabilities) == 0 {
 						models = append(models, model)
+						continue
+					}
+
+					// Filter models by specified capabilities
+					// Must match all capabilities
+					for _, capability := range options.Capabilities {
+						if _, has := model.Model.Capabilities[capability]; has {
+							models = append(models, model)
+						}
 					}
 				}
 			}
@@ -331,7 +435,18 @@ func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 		return nil, err
 	}
 
-	accountsClient, err := armstorage.NewAccountsClient(aiConfig.Subscription, credential, nil)
+	var armClientOptions *arm.ClientOptions
+
+	err = azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+		armClientOptions = clientOptions
+		return nil
+	})
+
+	accountsClient, err := armstorage.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +496,6 @@ func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 
 			var storageAccount *armstorage.Account
 
-			fmt.Println()
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
@@ -417,19 +531,22 @@ func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 				AddTask(ux.TaskOptions{
 					Title: "Assigning Storage Blob Data Contributor role",
 					Action: func() (ux.TaskState, error) {
-						rbacClient := azure.NewEntraIdService(credential, nil)
-						err := rbacClient.EnsureRoleAssignment(ctx, aiConfig.Subscription, *storageAccount.ID, principal.Oid, azure.RoleDefinitionStorageBlobDataContributor)
-						if err != nil {
-							return ux.Error, err
-						}
+						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
+							err := rbacClient.EnsureRoleAssignment(
+								ctx,
+								aiConfig.Subscription,
+								*storageAccount.ID,
+								principal.Oid,
+								azure.RoleDefinitionStorageBlobDataContributor,
+							)
+							if err != nil {
+								return err
+							}
 
-						if err = rbacClient.EnsureRoleAssignment(
-							ctx,
-							aiConfig.Subscription,
-							*storageAccount.ID,
-							principal.Oid,
-							azure.RoleDefinitionStorageBlobDataContributor,
-						); err != nil {
+							return nil
+						})
+
+						if err != nil {
 							return ux.Error, err
 						}
 
@@ -453,7 +570,13 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 		return nil, err
 	}
 
-	containersClient, err := armstorage.NewBlobContainersClient(aiConfig.Subscription, credential, nil)
+	var armClientOptions *arm.ClientOptions
+	err = azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+		armClientOptions = clientOptions
+		return nil
+	})
+
+	containersClient, err := armstorage.NewBlobContainersClient(aiConfig.Subscription, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -506,7 +629,6 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 
 			var blobContainer *armstorage.BlobContainer
 
-			fmt.Println()
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,

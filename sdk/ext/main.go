@@ -1,6 +1,7 @@
 package ext
 
 import (
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -18,10 +19,6 @@ var logFile *os.File
 
 func init() {
 	if isDebugEnabled() {
-		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
-			log.Printf("%s: %s\n", event, msg)
-		})
-	} else {
 		var err error
 
 		exePath, err := os.Executable()
@@ -46,8 +43,14 @@ func init() {
 		// Optional: Adds timestamp and file information to each log entry
 		log.SetFlags(log.LstdFlags | log.Lshortfile)
 
+		azcorelog.SetListener(func(event azcorelog.Event, msg string) {
+			log.Printf("%s: %s\n", event, msg)
+		})
+
 		// Register the signal handler to ensure log file is closed gracefully
 		setupSignalHandler()
+	} else {
+		log.SetOutput(io.Discard)
 	}
 }
 

@@ -2,6 +2,7 @@ package ux
 
 import (
 	"io"
+	"log"
 	"sync"
 )
 
@@ -66,6 +67,8 @@ func (c *canvas) render() error {
 			return err
 		}
 	}
+
+	log.Printf("Canvas Size: %v\n", c.printer.Size())
 
 	return nil
 }

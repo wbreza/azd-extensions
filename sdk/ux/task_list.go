@@ -15,17 +15,20 @@ import (
 
 type TaskListConfig struct {
 	// The writer to use for output (default: os.Stdout)
-	Writer       io.Writer
-	SuccessStyle string
-	ErrorStyle   string
-	WarningStyle string
-	RunningStyle string
-	SkippedStyle string
-	PendingStyle string
+	Writer             io.Writer
+	MaxConcurrentAsync int
+	SuccessStyle       string
+	ErrorStyle         string
+	WarningStyle       string
+	RunningStyle       string
+	SkippedStyle       string
+	PendingStyle       string
 }
 
 var DefaultTaskListConfig TaskListConfig = TaskListConfig{
-	Writer:       os.Stdout,
+	Writer:             os.Stdout,
+	MaxConcurrentAsync: 5,
+
 	SuccessStyle: color.GreenString("(✔) Done "),
 	ErrorStyle:   color.RedString("(x) Error "),
 	WarningStyle: color.YellowString("(!) Warning "),
@@ -41,8 +44,9 @@ type TaskList struct {
 	allTasks  []*Task
 	syncTasks []*Task // Queue for synchronous tasks
 
-	completed int32
-	syncMutex sync.Mutex // Mutex to handle sync task queue safely
+	completed      int32
+	syncMutex      sync.Mutex // Mutex to handle sync task queue safely
+	asyncSemaphore chan struct{}
 }
 
 type TaskOptions struct {
@@ -87,12 +91,13 @@ func NewTaskList(config *TaskListConfig) *TaskList {
 	}
 
 	return &TaskList{
-		config:    &mergedConfig,
-		waitGroup: sync.WaitGroup{},
-		allTasks:  []*Task{},
-		syncTasks: []*Task{},
-		syncMutex: sync.Mutex{},
-		completed: 0,
+		config:         &mergedConfig,
+		waitGroup:      sync.WaitGroup{},
+		allTasks:       []*Task{},
+		syncTasks:      []*Task{},
+		syncMutex:      sync.Mutex{},
+		completed:      0,
+		asyncSemaphore: make(chan struct{}, mergedConfig.MaxConcurrentAsync),
 	}
 }
 
@@ -114,7 +119,6 @@ func (t *TaskList) Run() error {
 	go func() {
 		for {
 			if t.Completed() {
-				t.Update()
 				break
 			}
 
@@ -123,10 +127,11 @@ func (t *TaskList) Run() error {
 		}
 	}()
 
+	// Wait for all async tasks to complete
 	t.waitGroup.Wait()
-
 	// Run sync tasks after async tasks are completed
 	t.runSyncTasks()
+	t.Update()
 
 	return nil
 }
@@ -147,7 +152,6 @@ func (t *TaskList) AddTask(options TaskOptions) *TaskList {
 	}
 
 	t.allTasks = append(t.allTasks, task)
-	t.Update()
 
 	return t
 }
@@ -166,6 +170,8 @@ func (t *TaskList) Update() error {
 }
 
 func (t *TaskList) Render(printer Printer) error {
+	printer.Fprintln()
+
 	for _, task := range t.allTasks {
 		endTime := time.Now()
 		if task.endTime != nil {
@@ -194,6 +200,8 @@ func (t *TaskList) Render(printer Printer) error {
 		}
 	}
 
+	printer.Fprintln()
+
 	return nil
 }
 
@@ -213,8 +221,6 @@ func (t *TaskList) runSyncTasks() {
 		task.State = state
 
 		atomic.AddInt32(&t.completed, 1)
-
-		t.Update()
 	}
 }
 
@@ -223,6 +229,10 @@ func (t *TaskList) addAsyncTask(task *Task) {
 	t.waitGroup.Add(1)
 	go func() {
 		defer t.waitGroup.Done()
+
+		// Acquire a slot in the semaphore
+		t.asyncSemaphore <- struct{}{}
+		defer func() { <-t.asyncSemaphore }()
 
 		task.startTime = Ptr(time.Now())
 		task.State = Running
@@ -234,8 +244,6 @@ func (t *TaskList) addAsyncTask(task *Task) {
 		task.State = state
 
 		atomic.AddInt32(&t.completed, 1)
-
-		_ = t.Update()
 	}()
 }
 

@@ -3,10 +3,8 @@ package internal
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/core/config"
 	"github.com/wbreza/azd-extensions/sdk/ext"
@@ -14,11 +12,18 @@ import (
 )
 
 type AiConfig struct {
-	Subscription   string `json:"subscription"`
-	ResourceGroup  string `json:"resourceGroup"`
-	Service        string `json:"service"`
-	Model          string `json:"model"`
-	StorageAccount string `json:"storage"`
+	Subscription     string       `json:"subscription"`
+	ResourceGroup    string       `json:"resourceGroup"`
+	Service          string       `json:"service"`
+	Models           ModelsConfig `json:"models"`
+	StorageAccount   string       `json:"storage"`
+	StorageContainer string       `json:"container"`
+}
+
+type ModelsConfig struct {
+	ChatCompletion string
+	Embeddings     string
+	Audio          string
 }
 
 var (
@@ -157,33 +162,6 @@ func SaveAiConfig(ctx context.Context, azdContext *ext.Context, config *AiConfig
 
 	if config == nil {
 		return errors.New("config is required")
-	}
-
-	credential, err := azdContext.Credential()
-	if err != nil {
-		return err
-	}
-
-	clientFactory, err := armcognitiveservices.NewClientFactory(config.Subscription, credential, nil)
-	if err != nil {
-		return err
-	}
-
-	accountClient := clientFactory.NewAccountsClient()
-
-	// Validate account name
-	_, err = accountClient.Get(ctx, config.ResourceGroup, config.Service, nil)
-	if err != nil {
-		return fmt.Errorf("the specified service configuration is invalid: %w", err)
-	}
-
-	// Validate model deployment name
-	if config.Model != "" {
-		deploymentClient := clientFactory.NewDeploymentsClient()
-		_, err = deploymentClient.Get(ctx, config.ResourceGroup, config.Service, config.Model, nil)
-		if err != nil {
-			return fmt.Errorf("the specified model deployment is invalid: %w", err)
-		}
 	}
 
 	env, err := azdContext.Environment(ctx)

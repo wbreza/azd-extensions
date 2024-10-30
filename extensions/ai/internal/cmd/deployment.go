@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
@@ -40,9 +41,15 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
+			var armClientOptions *arm.ClientOptions
+			azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+				armClientOptions = clientOptions
+				return nil
+			})
+
 			deployments := []*armcognitiveservices.Deployment{}
 
-			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, nil)
+			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
@@ -85,27 +92,20 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Println()
-
-			taskList := ux.NewTaskList(&ux.DefaultTaskListConfig)
-
-			if err := taskList.Run(); err != nil {
-				return err
-			}
-
-			modelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &prompt.PromptSelectOptions{
-				ForceNewResource: to.Ptr(true),
+			modelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+				SelectorOptions: &prompt.PromptSelectOptions{
+					ForceNewResource: to.Ptr(true),
+				},
 			})
 			if err != nil {
 				return err
 			}
 
-			aiConfig.Model = *modelDeployment.Name
+			aiConfig.Models.ChatCompletion = *modelDeployment.Name
 			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
 				return err
 			}
 
-			fmt.Println()
 			color.Green("Deployment '%s' created successfully", *modelDeployment.Name)
 
 			return nil
@@ -140,7 +140,13 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, nil)
+			var armClientOptions *arm.ClientOptions
+			azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+				armClientOptions = clientOptions
+				return nil
+			})
+
+			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
@@ -148,9 +154,15 @@ func newDeploymentCommand() *cobra.Command {
 			deploymentsClient := clientFactory.NewDeploymentsClient()
 
 			if deleteFlags.name == "" {
-				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &prompt.PromptSelectOptions{
-					AllowNewResource: to.Ptr(false),
-				})
+				selectedDeployment, err := internal.PromptModelDeployment(
+					ctx,
+					azdContext,
+					aiConfig,
+					&internal.PromptModelDeploymentOptions{
+						SelectorOptions: &prompt.PromptSelectOptions{
+							AllowNewResource: to.Ptr(false),
+						},
+					})
 				if err != nil {
 					return err
 				}
@@ -179,7 +191,6 @@ func newDeploymentCommand() *cobra.Command {
 
 			taskName := fmt.Sprintf("Deleting deployment %s", color.CyanString(deleteFlags.name))
 
-			fmt.Println()
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
@@ -206,7 +217,6 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Println()
 			color.Green("Deployment '%s' deleted successfully", deleteFlags.name)
 
 			return nil
@@ -245,13 +255,12 @@ func newDeploymentCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig.Model = *selectedDeployment.Name
+				aiConfig.Models.ChatCompletion = *selectedDeployment.Name
 			} else {
-				aiConfig.Model = selectFlags.deploymentName
+				aiConfig.Models.ChatCompletion = selectFlags.deploymentName
 			}
 
 			// Update AI Config
-			fmt.Println()
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: "Save AI configuration",
