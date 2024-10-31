@@ -1,6 +1,7 @@
 package ux
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"dario.cat/mergo"
 	"github.com/fatih/color"
+	"github.com/wbreza/azd-extensions/sdk/common"
 )
 
 type TaskListConfig struct {
@@ -46,7 +48,9 @@ type TaskList struct {
 
 	completed      int32
 	syncMutex      sync.Mutex // Mutex to handle sync task queue safely
+	errorMuxtex    sync.Mutex // Mutex to handle errors slice safely
 	asyncSemaphore chan struct{}
+	errors         []error
 }
 
 type TaskOptions struct {
@@ -96,8 +100,10 @@ func NewTaskList(config *TaskListConfig) *TaskList {
 		allTasks:       []*Task{},
 		syncTasks:      []*Task{},
 		syncMutex:      sync.Mutex{},
+		errorMuxtex:    sync.Mutex{},
 		completed:      0,
 		asyncSemaphore: make(chan struct{}, mergedConfig.MaxConcurrentAsync),
+		errors:         []error{},
 	}
 }
 
@@ -132,6 +138,10 @@ func (t *TaskList) Run() error {
 	// Run sync tasks after async tasks are completed
 	t.runSyncTasks()
 	t.Update()
+
+	if len(t.errors) > 0 {
+		return errors.Join(t.errors...)
+	}
 
 	return nil
 }
@@ -184,19 +194,29 @@ func (t *TaskList) Render(printer Printer) error {
 			elapsedText = color.HiBlackString("(%s)", durationAsText(elapsed))
 		}
 
+		var errorDescription string
+		if task.Error != nil {
+			var detailedErr *common.DetailedError
+			if errors.As(task.Error, &detailedErr) {
+				errorDescription = detailedErr.Description()
+			} else {
+				errorDescription = task.Error.Error()
+			}
+		}
+
 		switch task.State {
 		case Pending:
-			printer.Fprintf("%s %s\n", t.config.PendingStyle, task.Title)
+			printer.Fprintf("%s %s\n", color.HiBlackString(t.config.PendingStyle), task.Title)
 		case Running:
-			printer.Fprintf("%s %s %s\n", t.config.RunningStyle, task.Title, elapsedText)
+			printer.Fprintf("%s %s %s\n", color.CyanString(t.config.RunningStyle), task.Title, elapsedText)
 		case Warning:
-			printer.Fprintf("%s %s  %s\n", t.config.WarningStyle, task.Title, elapsedText)
+			printer.Fprintf("%s %s  %s\n", color.YellowString(t.config.WarningStyle), task.Title, elapsedText)
 		case Error:
-			printer.Fprintf("%s %s %s %s\n", t.config.ErrorStyle, task.Title, elapsedText, color.RedString("(%s)", task.Error.Error()))
+			printer.Fprintf("%s %s %s %s\n", color.RedString(t.config.ErrorStyle), task.Title, elapsedText, color.RedString("(%s)", errorDescription))
 		case Success:
-			printer.Fprintf("%s %s  %s\n", t.config.SuccessStyle, task.Title, elapsedText)
+			printer.Fprintf("%s %s  %s\n", color.GreenString(t.config.SuccessStyle), task.Title, elapsedText)
 		case Skipped:
-			printer.Fprintf("%s %s %s\n", t.config.SkippedStyle, task.Title, color.RedString("(%s)", task.Error.Error()))
+			printer.Fprintf("%s %s %s\n", color.HiBlackString(t.config.SkippedStyle), task.Title, color.RedString("(%s)", errorDescription))
 		}
 	}
 
@@ -215,6 +235,11 @@ func (t *TaskList) runSyncTasks() {
 		task.State = Running
 
 		state, err := task.Action()
+		if err != nil {
+			t.errorMuxtex.Lock()
+			t.errors = append(t.errors, err)
+			t.errorMuxtex.Unlock()
+		}
 
 		task.endTime = Ptr(time.Now())
 		task.Error = err
@@ -238,6 +263,11 @@ func (t *TaskList) addAsyncTask(task *Task) {
 		task.State = Running
 
 		state, err := task.Action()
+		if err != nil {
+			t.errorMuxtex.Lock()
+			t.errors = append(t.errors, err)
+			t.errorMuxtex.Unlock()
+		}
 
 		task.endTime = Ptr(time.Now())
 		task.Error = err

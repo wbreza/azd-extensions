@@ -12,12 +12,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/fatih/color"
 	"github.com/wbreza/azd-extensions/sdk/azure"
+	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
-func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armcognitiveservices.Account, error) {
+func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armcognitiveservices.Account, error) {
 	subscription, err := LoadOrPromptSubscription(ctx, azdContext, aiConfig)
 	if err != nil {
 		return nil, err
@@ -99,12 +100,12 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 
 						poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, account, nil)
 						if err != nil {
-							return ux.Error, err
+							return ux.Error, common.NewDetailedError("Failed to create Azure AI service account", err)
 						}
 
 						accountResponse, err := poller.PollUntilDone(ctx, nil)
 						if err != nil {
-							return ux.Error, err
+							return ux.Error, common.NewDetailedError("Failed to create Azure AI service account", err)
 						}
 
 						aiService = &accountResponse.Account
@@ -115,6 +116,10 @@ func PromptAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 				AddTask(ux.TaskOptions{
 					Title: "Creating role assignments",
 					Action: func() (ux.TaskState, error) {
+						if aiService == nil {
+							return ux.Skipped, errors.New("Azure AI service account creation failed")
+						}
+
 						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
@@ -424,7 +429,7 @@ func PromptModelSku(ctx context.Context, azdContext *ext.Context, aiConfig *AiCo
 	})
 }
 
-func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.Account, error) {
+func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.Account, error) {
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
@@ -441,6 +446,10 @@ func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 		armClientOptions = clientOptions
 		return nil
 	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	accountsClient, err := armstorage.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
 	if err != nil {
@@ -516,12 +525,12 @@ func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 
 						poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, accountCreateParams, nil)
 						if err != nil {
-							return ux.Error, err
+							return ux.Error, common.NewDetailedError("Failed to create storage account", err)
 						}
 
 						createResponse, err := poller.PollUntilDone(ctx, nil)
 						if err != nil {
-							return ux.Error, err
+							return ux.Error, common.NewDetailedError("Failed to create storage account", err)
 						}
 
 						storageAccount = &createResponse.Account
@@ -531,6 +540,10 @@ func PromptStorage(ctx context.Context, azdContext *ext.Context, aiConfig *AiCon
 				AddTask(ux.TaskOptions{
 					Title: "Assigning Storage Blob Data Contributor role",
 					Action: func() (ux.TaskState, error) {
+						if storageAccount == nil {
+							return ux.Skipped, errors.New("Storage account creation failed")
+						}
+
 						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
@@ -575,6 +588,10 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 		armClientOptions = clientOptions
 		return nil
 	})
+
+	if err != nil {
+		return nil, err
+	}
 
 	containersClient, err := armstorage.NewBlobContainersClient(aiConfig.Subscription, credential, armClientOptions)
 	if err != nil {

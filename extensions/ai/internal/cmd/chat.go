@@ -83,6 +83,8 @@ func newChatCommand() *cobra.Command {
 			}
 
 			if aiConfig.Models.ChatCompletion == "" {
+				color.Yellow("No chat completion model was found. Please select or create a chat completion model.")
+
 				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
 					Capabilities: []string{
 						"chatCompletion",

@@ -38,7 +38,7 @@ func newServiceCommand() *cobra.Command {
 			var aiConfig *internal.AiConfig
 
 			if setFlags.subscription == "" || setFlags.resourceGroup == "" || setFlags.serviceName == "" {
-				selectedAccount, err := internal.PromptAccount(ctx, azdContext, nil)
+				selectedAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, nil)
 				if err != nil {
 					return err
 				}

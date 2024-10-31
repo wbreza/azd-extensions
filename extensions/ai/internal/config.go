@@ -101,7 +101,7 @@ func LoadOrPromptResourceGroup(ctx context.Context, azdContext *ext.Context, aiC
 func LoadOrPromptAiConfig(ctx context.Context, azdContext *ext.Context) (*AiConfig, error) {
 	config, err := LoadAiConfig(ctx, azdContext)
 	if err != nil && errors.Is(err, ErrNotFound) {
-		account, err := PromptAccount(ctx, azdContext, nil)
+		account, err := PromptAIServiceAccount(ctx, azdContext, nil)
 		if err != nil {
 			return nil, err
 		}

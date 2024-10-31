@@ -11,10 +11,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
+	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/common/permissions"
 	"github.com/wbreza/azd-extensions/sdk/ext"
+	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
@@ -66,6 +69,12 @@ func newGenerateCommand() *cobra.Command {
 		Use:   "generate",
 		Short: "Generate embeddings from documents in Azure",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			header := output.CommandHeader{
+				Title:       "Generate text embeddings for documents (azd ai embedding generate)",
+				Description: "Generate text embeddings for documents using text embedding AI model",
+			}
+			header.Print()
+
 			ctx := cmd.Context()
 			azdContext, err := ext.CurrentContext(ctx)
 			if err != nil {
@@ -87,6 +96,8 @@ func newGenerateCommand() *cobra.Command {
 			}
 
 			if aiConfig.Models.Embeddings == "" {
+				color.Yellow("No text embedding model was found. Please select or create a text embedding model.")
+
 				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
 					Capabilities: []string{
 						"embeddings",
@@ -167,7 +178,7 @@ func newGenerateCommand() *cobra.Command {
 							}, nil)
 
 							if err != nil {
-								return ux.Error, err
+								return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
 							}
 
 							embeddingDoc := EmbeddingDocument{
@@ -186,7 +197,7 @@ func newGenerateCommand() *cobra.Command {
 							}
 
 							if err := os.WriteFile(outputFilePath, jsonData, permissions.PermissionFile); err != nil {
-								return ux.Error, err
+								return ux.Error, common.NewDetailedError("Failed to write embeddings to file", err)
 							}
 
 							return ux.Success, nil

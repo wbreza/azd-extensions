@@ -12,7 +12,9 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/azure/storage"
+	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/ext"
+	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
@@ -55,6 +57,12 @@ func newUploadCommand() *cobra.Command {
 		Use:   "upload",
 		Short: "Upload documents to Azure Blob Storage",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			header := output.CommandHeader{
+				Title:       "Upload documents to storage (azd ai document upload)",
+				Description: "Upload a set of documents to Azure Blob Storage.",
+			}
+			header.Print()
+
 			ctx := cmd.Context()
 
 			azdContext, err := ext.CurrentContext(ctx)
@@ -77,7 +85,7 @@ func newUploadCommand() *cobra.Command {
 			}
 
 			if aiConfig.StorageAccount == "" {
-				storageAccount, err := internal.PromptStorage(ctx, azdContext, aiConfig)
+				storageAccount, err := internal.PromptStorageAccount(ctx, azdContext, aiConfig)
 				if err != nil {
 					return err
 				}
@@ -158,7 +166,7 @@ func newUploadCommand() *cobra.Command {
 
 							err = blobService.Upload(ctx, relativePath, file)
 							if err != nil {
-								return ux.Error, err
+								return ux.Error, common.NewDetailedError("Failed to upload document", err)
 							}
 
 							return ux.Success, nil
