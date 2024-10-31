@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
@@ -124,16 +123,15 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			keysResponse, err := accountClient.ListKeys(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
-			if err != nil {
-				return err
-			}
+			// keysResponse, err := accountClient.ListKeys(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+			// if err != nil {
+			// 	return err
+			// }
 
-			keyCredential := azcore.NewKeyCredential(*keysResponse.Key1)
+			// keyCredential := azcore.NewKeyCredential(*keysResponse.Key1)
 
-			endpointName := "OpenAI Language Model Instance API"
-			endpoint := *account.Properties.Endpoints[endpointName]
-			chatClient, err := azopenai.NewClientWithKeyCredential(endpoint, keyCredential, nil)
+			endpoint := *account.Properties.Endpoint
+			openAiClient, err := azopenai.NewClient(endpoint, credential, nil)
 			if err != nil {
 				return err
 			}
@@ -201,7 +199,7 @@ func newChatCommand() *cobra.Command {
 				var chatResponse *azopenai.ChatCompletions
 
 				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
-					response, err := chatClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
+					response, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
 						Messages:       messages,
 						DeploymentName: &aiConfig.Models.ChatCompletion,
 						Temperature:    &chatFlags.temperature,

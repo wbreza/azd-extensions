@@ -1,0 +1,247 @@
+package cmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/spf13/cobra"
+	"github.com/wbreza/azd-extensions/extensions/ai/internal"
+	"github.com/wbreza/azd-extensions/sdk/common/permissions"
+	"github.com/wbreza/azd-extensions/sdk/ext"
+	"github.com/wbreza/azd-extensions/sdk/ux"
+)
+
+// Flag structs for the azd ai embedding commands
+type GenerateFlags struct {
+	Container string
+	Source    string
+	Model     string
+	Output    string
+	BatchSize int
+	Pattern   string
+	Normalize bool
+	Language  string
+}
+
+type IngestFlags struct {
+	IndexName       string
+	EmbeddingSource string
+	BatchSize       int
+	Overwrite       bool
+	Transform       string
+}
+
+type EmbeddingDocument struct {
+	Id        string    `json:"id"`
+	Text      string    `json:"text"`
+	Embedding []float32 `json:"embedding"`
+}
+
+// Command to initialize `azd ai embedding` command group
+func newEmbeddingCommand() *cobra.Command {
+	// Main `embedding` command
+	embeddingCmd := &cobra.Command{
+		Use:   "embedding",
+		Short: "Manage embeddings, including generation, listing, and ingestion",
+	}
+
+	// Add subcommands to the `embedding` command
+	embeddingCmd.AddCommand(newGenerateCommand())
+	embeddingCmd.AddCommand(newIngestCommand())
+
+	return embeddingCmd
+}
+
+// Subcommand `generate` for generating embeddings
+func newGenerateCommand() *cobra.Command {
+	flags := &GenerateFlags{}
+	generateCmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate embeddings from documents in Azure",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			azdContext, err := ext.CurrentContext(ctx)
+			if err != nil {
+				return err
+			}
+
+			credential, err := azdContext.Credential()
+			if err != nil {
+				return err
+			}
+
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			if err != nil {
+				return err
+			}
+
+			if flags.Model != "" {
+				aiConfig.Models.Embeddings = flags.Model
+			}
+
+			if aiConfig.Models.Embeddings == "" {
+				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+					Capabilities: []string{
+						"embeddings",
+					},
+				})
+				if err != nil {
+					return err
+				}
+
+				aiConfig.Models.Embeddings = *selectedModelDeployment.Name
+
+				if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+					return err
+				}
+			}
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalf("Error getting current working directory: %v", err)
+			}
+
+			// Combine the current working directory with the relative path
+			absolutePath := filepath.Join(cwd, flags.Source)
+
+			matchingFiles, err := getMatchingFiles(absolutePath, flags.Pattern, true)
+			if err != nil {
+				return err
+			}
+
+			embeddingsOutputPath := filepath.Join(cwd, "embeddings")
+			if err := os.MkdirAll(embeddingsOutputPath, permissions.PermissionDirectory); err != nil {
+				return err
+			}
+
+			err = azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+				accountClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, clientOptions)
+				if err != nil {
+					return err
+				}
+
+				account, err := accountClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+				if err != nil {
+					return err
+				}
+
+				openAiClient, err := azopenai.NewClient(*account.Properties.Endpoint, credential, nil)
+				if err != nil {
+					return err
+				}
+
+				taskList := ux.NewTaskList(nil)
+
+				for index, file := range matchingFiles {
+					relativePath, err := filepath.Rel(cwd, file)
+					if err != nil {
+						return err
+					}
+
+					jsonBytes, err := os.ReadFile(file)
+					if err != nil {
+						return err
+					}
+
+					taskList.AddTask(ux.TaskOptions{
+						Title: fmt.Sprintf("Generating embeddings for document %s", relativePath),
+						Async: true,
+						Action: func() (ux.TaskState, error) {
+							embeddingText := string(jsonBytes)
+							embeddingText = strings.ReplaceAll(embeddingText, "\n", " ")
+							embeddingText = strings.ReplaceAll(embeddingText, "\r", " ")
+							embeddingText = strings.ReplaceAll(embeddingText, "\t", " ")
+
+							response, err := openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
+								Input: []string{
+									embeddingText,
+								},
+								DeploymentName: &aiConfig.Models.Embeddings,
+							}, nil)
+
+							if err != nil {
+								return ux.Error, err
+							}
+
+							embeddingDoc := EmbeddingDocument{
+								Id:        fmt.Sprint(index + 1),
+								Text:      embeddingText,
+								Embedding: response.Embeddings.Data[0].Embedding,
+							}
+
+							base := filepath.Base(file)
+							outputFileNameBase := strings.TrimSuffix(base, filepath.Ext(base))
+							outputFilePath := filepath.Join(embeddingsOutputPath, fmt.Sprintf("%s.json", outputFileNameBase))
+
+							jsonData, err := json.MarshalIndent(embeddingDoc, "", "  ")
+							if err != nil {
+								return ux.Error, err
+							}
+
+							if err := os.WriteFile(outputFilePath, jsonData, permissions.PermissionFile); err != nil {
+								return ux.Error, err
+							}
+
+							return ux.Success, nil
+						},
+					})
+				}
+
+				if err := taskList.Run(); err != nil {
+					return err
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return err
+			}
+
+			return nil
+		},
+	}
+
+	// Define flags for `generate` command
+	generateCmd.Flags().StringVar(&flags.Source, "source", "", "Path to the local file or directory to upload (required)")
+	generateCmd.Flags().StringVar(&flags.Container, "container", "", "Source container in Blob Storage with documents to embed (required)")
+	generateCmd.Flags().StringVar(&flags.Model, "model", "", "Model name to use for embedding (e.g., 'embedding-ada-002') (required)")
+	generateCmd.Flags().StringVar(&flags.Output, "output", "", "Path or container to save generated embeddings")
+	generateCmd.Flags().IntVar(&flags.BatchSize, "batch-size", 0, "Number of documents to process in each batch")
+	generateCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file types to process (e.g., '.pdf', '.txt')")
+	generateCmd.Flags().BoolVar(&flags.Normalize, "normalize", false, "Normalize text before embedding (e.g., lowercase, remove special characters)")
+	generateCmd.Flags().StringVar(&flags.Language, "language", "", "Specify language if the model supports multilingual text")
+
+	return generateCmd
+}
+
+// Subcommand `ingest` for ingesting embeddings into a vector store
+func newIngestCommand() *cobra.Command {
+	flags := &IngestFlags{}
+	ingestCmd := &cobra.Command{
+		Use:   "ingest",
+		Short: "Ingest embeddings into a vector store",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return nil
+		},
+	}
+
+	// Define flags for `ingest` command
+	ingestCmd.Flags().StringVar(&flags.IndexName, "index-name", "", "Target vector store or index name for ingestion (required)")
+	ingestCmd.Flags().StringVar(&flags.EmbeddingSource, "embedding-source", "", "Source of the embeddings (e.g., directory or container) (required)")
+	ingestCmd.Flags().IntVar(&flags.BatchSize, "batch-size", 0, "Batch size for ingestion")
+	ingestCmd.Flags().BoolVar(&flags.Overwrite, "overwrite", false, "Overwrite existing embeddings in the vector store")
+	ingestCmd.Flags().StringVar(&flags.Transform, "transform", "", "Apply transformations (e.g., dimension reduction) before ingesting")
+
+	_ = ingestCmd.MarkFlagRequired("index-name")
+	_ = ingestCmd.MarkFlagRequired("embedding-source")
+
+	return ingestCmd
+}
