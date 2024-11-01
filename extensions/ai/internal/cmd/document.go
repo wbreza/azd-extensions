@@ -194,6 +194,8 @@ func newUploadCommand() *cobra.Command {
 	uploadCmd.Flags().StringVar(&flags.Container, "container", "", "Azure Blob Storage container name to upload to (required)")
 	uploadCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file type pattern to upload (e.g., '.pdf', '.txt')")
 
+	_ = uploadCmd.MarkFlagRequired("source")
+
 	return uploadCmd
 }
 

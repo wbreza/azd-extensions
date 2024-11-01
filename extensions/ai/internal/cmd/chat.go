@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
@@ -14,6 +16,7 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
+	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearchindex"
 )
 
 type chatUsageFlags struct {
@@ -53,9 +56,11 @@ func newChatCommand() *cobra.Command {
 			}
 
 			var armClientOptions *arm.ClientOptions
+			var azClientOptions *azcore.ClientOptions
 
-			azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+			azdContext.Invoke(func(clientOptions *arm.ClientOptions, options2 *azcore.ClientOptions) error {
 				armClientOptions = clientOptions
+				azClientOptions = options2
 				return nil
 			})
 
@@ -125,15 +130,8 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			// keysResponse, err := accountClient.ListKeys(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
-			// if err != nil {
-			// 	return err
-			// }
-
-			// keyCredential := azcore.NewKeyCredential(*keysResponse.Key1)
-
-			endpoint := *account.Properties.Endpoint
-			openAiClient, err := azopenai.NewClient(endpoint, credential, nil)
+			aiEndpoint := *account.Properties.Endpoint
+			openAiClient, err := azopenai.NewClient(aiEndpoint, credential, nil)
 			if err != nil {
 				return err
 			}
@@ -168,6 +166,20 @@ func newChatCommand() *cobra.Command {
 
 			userMessage := chatFlags.message
 
+			var hasVectorSearch bool
+			var documentsClient *azsearchindex.DocumentsClient
+
+
+			if aiConfig.Search.Service != "" && aiConfig.Search.Index != "" {
+				searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
+				documentsClient, err = azsearchindex.NewDocumentsClient(searchEndpoint, aiConfig.Search.Index, credential, azClientOptions))
+				if err != nil {
+					return err
+				}
+
+				hasVectorSearch = true
+			}
+
 			for {
 				var err error
 
@@ -201,6 +213,20 @@ func newChatCommand() *cobra.Command {
 				var chatResponse *azopenai.ChatCompletions
 
 				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
+					if hasVectorSearch {
+						log.Println("Vector search is enabled")
+						// documentsClient.SearchPost(ctx, azsearchindex.SearchRequest{
+						// 	QueryType: azsearchindex.QueryTypeFull,
+						// 	VectorQueries: []azsearchindex.VectorQueryClassification{
+						// 		{
+						// 			azsearchindex.VectorQuery{
+						// 				,
+						// 			}
+						// 		}
+						// 	},
+						// }, nil, nil)
+					}
+
 					response, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
 						Messages:       messages,
 						DeploymentName: &aiConfig.Models.ChatCompletion,

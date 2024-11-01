@@ -11,7 +11,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -21,6 +23,7 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
+	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearchindex"
 )
 
 // Flag structs for the azd ai embedding commands
@@ -36,11 +39,12 @@ type GenerateFlags struct {
 }
 
 type IngestFlags struct {
-	IndexName       string
-	EmbeddingSource string
-	BatchSize       int
-	Overwrite       bool
-	Transform       string
+	IndexName string
+	Source    string
+	Pattern   string
+	BatchSize int
+	Overwrite bool
+	Transform string
 }
 
 type EmbeddingDocument struct {
@@ -214,11 +218,7 @@ func newGenerateCommand() *cobra.Command {
 					})
 				}
 
-				if err := taskList.Run(); err != nil {
-					return err
-				}
-
-				return nil
+				return taskList.Run()
 			})
 
 			if err != nil {
@@ -239,6 +239,8 @@ func newGenerateCommand() *cobra.Command {
 	generateCmd.Flags().BoolVar(&flags.Normalize, "normalize", false, "Normalize text before embedding (e.g., lowercase, remove special characters)")
 	generateCmd.Flags().StringVar(&flags.Language, "language", "", "Specify language if the model supports multilingual text")
 
+	_ = generateCmd.MarkFlagRequired("source")
+
 	return generateCmd
 }
 
@@ -249,19 +251,131 @@ func newIngestCommand() *cobra.Command {
 		Use:   "ingest",
 		Short: "Ingest embeddings into a vector store",
 		RunE: func(cmd *cobra.Command, args []string) error {
+			header := output.CommandHeader{
+				Title:       "Generate text embeddings for documents (azd ai embedding generate)",
+				Description: "Generate text embeddings for documents using text embedding AI model",
+			}
+			header.Print()
+
+			ctx := cmd.Context()
+			azdContext, err := ext.CurrentContext(ctx)
+			if err != nil {
+				return err
+			}
+
+			credential, err := azdContext.Credential()
+			if err != nil {
+				return err
+			}
+
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			if err != nil {
+				return err
+			}
+
+			if aiConfig.Search.Service == "" {
+				searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+				if err != nil {
+					return err
+				}
+
+				aiConfig.Search.Service = *searchService.Name
+			}
+
+			if aiConfig.Search.Index == "" {
+				searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+				if err != nil {
+					return err
+				}
+
+				aiConfig.Search.Index = *searchIndex.Name
+			}
+
+			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+				return err
+			}
+
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalf("Error getting current working directory: %v", err)
+			}
+
+			// Combine the current working directory with the relative path
+			absolutePath := filepath.Join(cwd, flags.Source)
+
+			matchingFiles, err := getMatchingFiles(absolutePath, flags.Pattern, true)
+			if err != nil {
+				return err
+			}
+
+			err = azdContext.Invoke(func(clientOptions *azcore.ClientOptions) error {
+				endpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
+				documentsClient, err := azsearchindex.NewDocumentsClient(endpoint, aiConfig.Search.Index, credential, clientOptions)
+				if err != nil {
+					return err
+				}
+
+				taskList := ux.NewTaskList(nil)
+
+				for _, file := range matchingFiles {
+					relativePath, err := filepath.Rel(cwd, file)
+					if err != nil {
+						return err
+					}
+
+					relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+
+					taskList.AddTask(ux.TaskOptions{
+						Title: fmt.Sprintf("Ingesting embeddings for document %s", relativePath),
+						Action: func() (ux.TaskState, error) {
+							jsonBytes, err := os.ReadFile(file)
+							if err != nil {
+								return ux.Error, common.NewDetailedError("Failed to read embeddings from file", err)
+							}
+
+							embeddingDoc := map[string]any{}
+							if err := json.Unmarshal(jsonBytes, &embeddingDoc); err != nil {
+								return ux.Error, common.NewDetailedError("Failed to parse embeddings from file", err)
+							}
+
+							batch := azsearchindex.IndexBatch{
+								Actions: []*azsearchindex.IndexAction{
+									{
+										ActionType:           to.Ptr(azsearchindex.IndexActionTypeMergeOrUpload),
+										AdditionalProperties: embeddingDoc,
+									},
+								},
+							}
+
+							_, err = documentsClient.Index(ctx, batch, nil, nil)
+							if err != nil {
+								return ux.Error, common.NewDetailedError("Failed to ingest embeddings", err)
+							}
+
+							return ux.Success, nil
+						},
+					})
+				}
+
+				return taskList.Run()
+			})
+
+			if err != nil {
+				return err
+			}
+
 			return nil
 		},
 	}
 
 	// Define flags for `ingest` command
 	ingestCmd.Flags().StringVar(&flags.IndexName, "index-name", "", "Target vector store or index name for ingestion (required)")
-	ingestCmd.Flags().StringVar(&flags.EmbeddingSource, "embedding-source", "", "Source of the embeddings (e.g., directory or container) (required)")
+	ingestCmd.Flags().StringVar(&flags.Source, "source", "", "Source of the embeddings (e.g., directory or container) (required)")
+	ingestCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file types to process (e.g., '.pdf', '.txt')")
 	ingestCmd.Flags().IntVar(&flags.BatchSize, "batch-size", 0, "Batch size for ingestion")
 	ingestCmd.Flags().BoolVar(&flags.Overwrite, "overwrite", false, "Overwrite existing embeddings in the vector store")
-	ingestCmd.Flags().StringVar(&flags.Transform, "transform", "", "Apply transformations (e.g., dimension reduction) before ingesting")
 
-	_ = ingestCmd.MarkFlagRequired("index-name")
-	_ = ingestCmd.MarkFlagRequired("embedding-source")
+	_ = ingestCmd.MarkFlagRequired("source")
 
 	return ingestCmd
 }
