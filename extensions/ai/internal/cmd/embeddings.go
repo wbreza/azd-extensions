@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -42,9 +44,11 @@ type IngestFlags struct {
 }
 
 type EmbeddingDocument struct {
-	Id        string    `json:"id"`
-	Text      string    `json:"text"`
-	Embedding []float32 `json:"embedding"`
+	ChunkId    string    `json:"chunk_id"`
+	ParentId   string    `json:"parent_id"`
+	Chunk      string    `json:"chunk"`
+	Title      string    `json:"title"`
+	TextVector []float32 `json:"text_vector"`
 }
 
 // Command to initialize `azd ai embedding` command group
@@ -150,11 +154,13 @@ func newGenerateCommand() *cobra.Command {
 
 				taskList := ux.NewTaskList(nil)
 
-				for index, file := range matchingFiles {
+				for _, file := range matchingFiles {
 					relativePath, err := filepath.Rel(cwd, file)
 					if err != nil {
 						return err
 					}
+
+					relativePath = strings.ReplaceAll(relativePath, "\\", "/")
 
 					jsonBytes, err := os.ReadFile(file)
 					if err != nil {
@@ -181,10 +187,13 @@ func newGenerateCommand() *cobra.Command {
 								return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
 							}
 
+							contentHash := sha256.Sum256([]byte(embeddingText))
+
 							embeddingDoc := EmbeddingDocument{
-								Id:        fmt.Sprint(index + 1),
-								Text:      embeddingText,
-								Embedding: response.Embeddings.Data[0].Embedding,
+								Title:      relativePath,
+								ChunkId:    hex.EncodeToString(contentHash[:]),
+								Chunk:      embeddingText,
+								TextVector: response.Embeddings.Data[0].Embedding,
 							}
 
 							base := filepath.Base(file)

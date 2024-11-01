@@ -18,7 +18,9 @@ type RoleName string
 
 const (
 	RoleDefinitionStorageBlobDataContributor RoleName = "Storage Blob Data Contributor"
-	RoleCognitiveServicesOpenAIContributor            = "Cognitive Services OpenAI Contributor"
+	RoleCognitiveServicesOpenAIContributor   RoleName = "Cognitive Services OpenAI Contributor"
+	RoleSearchIndexDataContributor           RoleName = "Search Index Data Contributor"
+	RoleSearchServiceContributor             RoleName = "Search Service Contributor"
 )
 
 type EntraIdService struct {
@@ -36,34 +38,37 @@ func NewEntraIdService(
 	}
 }
 
-func (eis *EntraIdService) EnsureRoleAssignment(ctx context.Context, subscriptionId string, scope string, principalId string, roleName RoleName) error {
+func (eis *EntraIdService) EnsureRoleAssignment(ctx context.Context, subscriptionId string, scope string, principalId string, roleNames ...RoleName) error {
 	authClient, err := armauthorization.NewClientFactory(subscriptionId, eis.credential, eis.armClientOptions)
 	if err != nil {
 		return err
 	}
 
 	rbacClient := authClient.NewRoleAssignmentsClient()
-	roleDefinitionId, err := eis.getRoleDefinitionId(ctx, subscriptionId, roleName)
-	if err != nil {
-		return err
-	}
 
-	_, err = rbacClient.Create(ctx, scope, uuid.New().String(), armauthorization.RoleAssignmentCreateParameters{
-		Properties: &armauthorization.RoleAssignmentProperties{
-			PrincipalID:      &principalId,
-			RoleDefinitionID: &roleDefinitionId,
-		},
-	}, nil)
-
-	if err != nil {
-		var responseError *azcore.ResponseError
-
-		// If the response is a 409 conflict then the role has already been assigned.
-		if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
-			return nil
+	for _, roleName := range roleNames {
+		roleDefinitionId, err := eis.getRoleDefinitionId(ctx, subscriptionId, roleName)
+		if err != nil {
+			return err
 		}
 
-		return err
+		_, err = rbacClient.Create(ctx, scope, uuid.New().String(), armauthorization.RoleAssignmentCreateParameters{
+			Properties: &armauthorization.RoleAssignmentProperties{
+				PrincipalID:      &principalId,
+				RoleDefinitionID: &roleDefinitionId,
+			},
+		}, nil)
+
+		if err != nil {
+			var responseError *azcore.ResponseError
+
+			// If the response is a 409 conflict then the role has already been assigned.
+			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
+				return nil
+			}
+
+			return err
+		}
 	}
 
 	return nil

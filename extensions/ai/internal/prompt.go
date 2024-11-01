@@ -6,9 +6,11 @@ import (
 	"fmt"
 
 	"dario.cat/mergo"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage"
 	"github.com/fatih/color"
 	"github.com/wbreza/azd-extensions/sdk/azure"
@@ -16,6 +18,7 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
+	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearch"
 )
 
 func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armcognitiveservices.Account, error) {
@@ -578,6 +581,15 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 }
 
 func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.BlobContainer, error) {
+	if aiConfig.Storage.Account == "" {
+		storageAccount, err := PromptStorageAccount(ctx, azdContext, aiConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		aiConfig.Storage.Account = *storageAccount.Name
+	}
+
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
@@ -609,7 +621,7 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 		LoadData: func(ctx context.Context) ([]*armstorage.BlobContainer, error) {
 			blobContainers := []*armstorage.BlobContainer{}
 
-			pager := containersClient.NewListPager(aiConfig.ResourceGroup, aiConfig.StorageAccount, nil)
+			pager := containersClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Storage.Account, nil)
 			for pager.More() {
 				pageResponse, err := pager.NextPage(ctx)
 				if err != nil {
@@ -657,7 +669,7 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 							},
 						}
 
-						createResponse, err := containersClient.Create(ctx, aiConfig.ResourceGroup, aiConfig.StorageAccount, containerName, newContainer, nil)
+						createResponse, err := containersClient.Create(ctx, aiConfig.ResourceGroup, aiConfig.Storage.Account, containerName, newContainer, nil)
 						if err != nil {
 							return ux.Error, err
 						}
@@ -675,4 +687,342 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 			return blobContainer, nil
 		},
 	})
+}
+
+func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armsearch.Service, error) {
+	subscription, err := LoadOrPromptSubscription(ctx, azdContext, aiConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	principal, err := azdContext.Principal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	var armClientOptions *arm.ClientOptions
+
+	azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
+		armClientOptions = clientOptions
+		return nil
+	})
+
+	searchClient, err := armsearch.NewServicesClient(subscription.Id, credential, armClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	if aiConfig == nil {
+		aiConfig = &AiConfig{
+			Subscription: subscription.Id,
+		}
+	}
+
+	var aiSearchService *armsearch.Service
+
+	selectedResource, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
+		ResourceType:            to.Ptr(azure.ResourceTypeSearchService),
+		ResourceTypeDisplayName: "Azure AI Search",
+		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
+			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
+			if err != nil {
+				return nil, err
+			}
+
+			aiConfig.ResourceGroup = resourceGroup.Name
+
+			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+				Message: "Enter the name for the Azure AI Search service",
+			})
+
+			searchName, err := namePrompt.Ask()
+			if err != nil {
+				return nil, err
+			}
+
+			taskName := fmt.Sprintf("Creating Azure AI Search service %s", color.CyanString(searchName))
+
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						searchService := armsearch.Service{
+							Name:     &searchName,
+							Location: &resourceGroup.Location,
+							Identity: &armsearch.Identity{
+								Type: to.Ptr(armsearch.IdentityTypeSystemAssigned),
+							},
+							SKU: &armsearch.SKU{
+								Name: to.Ptr(armsearch.SKUNameStandard),
+							},
+							Properties: &armsearch.ServiceProperties{
+								PublicNetworkAccess: to.Ptr(armsearch.PublicNetworkAccessEnabled),
+								HostingMode:         to.Ptr(armsearch.HostingModeDefault),
+								ReplicaCount:        to.Ptr(int32(1)),
+								PartitionCount:      to.Ptr(int32(1)),
+								AuthOptions: &armsearch.DataPlaneAuthOptions{
+									AADOrAPIKey: &armsearch.DataPlaneAADOrAPIKeyAuthOption{
+										AADAuthFailureMode: to.Ptr(armsearch.AADAuthFailureModeHttp403),
+									},
+								},
+							},
+						}
+
+						poller, err := searchClient.BeginCreateOrUpdate(ctx, resourceGroup.Name, searchName, searchService, nil, nil)
+						if err != nil {
+							return ux.Error, common.NewDetailedError("Failed to create Azure AI Search service", err)
+						}
+
+						accountResponse, err := poller.PollUntilDone(ctx, nil)
+						if err != nil {
+							return ux.Error, common.NewDetailedError("Failed to create Azure AI Search service", err)
+						}
+
+						aiSearchService = &accountResponse.Service
+
+						return ux.Success, nil
+					},
+				}).
+				AddTask(ux.TaskOptions{
+					Title: "Creating role assignments",
+					Action: func() (ux.TaskState, error) {
+						if aiSearchService == nil {
+							return ux.Skipped, errors.New("Azure AI Service service creation failed")
+						}
+
+						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
+							err := rbacClient.EnsureRoleAssignment(
+								ctx,
+								aiConfig.Subscription,
+								*aiSearchService.ID,
+								principal.Oid,
+								azure.RoleSearchIndexDataContributor,
+								azure.RoleSearchServiceContributor,
+							)
+							if err != nil {
+								return err
+							}
+
+							return nil
+						})
+
+						if err != nil {
+							return ux.Error, err
+						}
+
+						return ux.Success, nil
+					},
+				}).
+				Run()
+
+			if err != nil {
+				return nil, err
+			}
+
+			return &azure.ResourceExtended{
+				Resource: azure.Resource{
+					Id:       *aiSearchService.ID,
+					Name:     *aiSearchService.Name,
+					Type:     *aiSearchService.Type,
+					Location: *aiSearchService.Location,
+				},
+			}, nil
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if aiSearchService == nil {
+		parsedResource, err := arm.ParseResourceID(selectedResource.Id)
+		if err != nil {
+			return nil, err
+		}
+
+		existingAccount, err := searchClient.Get(ctx, parsedResource.ResourceGroupName, parsedResource.Name, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		aiSearchService = &existingAccount.Service
+	}
+
+	return aiSearchService, nil
+}
+
+func PromptSearchIndex(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*azsearch.Index, error) {
+	if aiConfig.Search.Service == "" {
+		searchService, err := PromptSearchService(ctx, azdContext, aiConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		aiConfig.Search.Service = *searchService.Name
+	}
+
+	credential, err := azdContext.Credential()
+	if err != nil {
+		return nil, err
+	}
+
+	var azClientOptions *azcore.ClientOptions
+
+	azdContext.Invoke(func(clientOptions *azcore.ClientOptions) error {
+		azClientOptions = clientOptions
+		return nil
+	})
+
+	endpoint := fmt.Sprintf("https://%s.%s", aiConfig.Search.Service, "search.windows.net")
+	indexesClient, err := azsearch.NewIndexesClient(endpoint, credential, azClientOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[azsearch.Index]{
+		SelectorOptions: &prompt.PromptSelectOptions{
+			Message:            "Select a search index",
+			LoadingMessage:     "Loading search indexes...",
+			AllowNewResource:   to.Ptr(true),
+			NewResourceMessage: "Create a new search index",
+			CreatingMessage:    "Creating search index...",
+		},
+		LoadData: func(ctx context.Context) ([]*azsearch.Index, error) {
+			indexPager := indexesClient.NewListPager(nil, nil)
+
+			indexList := []*azsearch.Index{}
+			for indexPager.More() {
+				page, err := indexPager.NextPage(ctx)
+				if err != nil {
+					return nil, err
+				}
+
+				indexList = append(indexList, page.Indexes...)
+			}
+
+			return indexList, nil
+		},
+		DisplayResource: func(index *azsearch.Index) (string, error) {
+			return *index.Name, nil
+		},
+		CreateResource: func(ctx context.Context) (*azsearch.Index, error) {
+			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+				Message: "Enter the name for the Azure Search index",
+			})
+
+			indexName, err := namePrompt.Ask()
+			if err != nil {
+				return nil, err
+			}
+
+			taskName := fmt.Sprintf("Creating Azure AI Search index %s", color.CyanString(indexName))
+
+			indexSpec := defaultSearchIndex(indexName)
+			var newIndex *azsearch.Index
+
+			err = ux.NewTaskList(nil).
+				AddTask(ux.TaskOptions{
+					Title: taskName,
+					Action: func() (ux.TaskState, error) {
+						createResponse, err := indexesClient.CreateOrUpdate(ctx, indexName, azsearch.Enum0ReturnRepresentation, *indexSpec, nil, nil)
+						if err != nil {
+							return ux.Error, common.NewDetailedError("Failed to create Azure Search index", err)
+						}
+
+						newIndex = &createResponse.Index
+
+						return ux.Success, nil
+					},
+				}).
+				Run()
+
+			if err != nil {
+				return nil, err
+			}
+
+			return newIndex, nil
+		},
+	})
+}
+
+func defaultSearchIndex(indexName string) *azsearch.Index {
+	return &azsearch.Index{
+		Name: &indexName,
+		Fields: []*azsearch.Field{
+			{
+				Name:        to.Ptr("chunk_id"),
+				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
+				Key:         to.Ptr(true),
+				Analyzer:    to.Ptr(azsearch.LexicalAnalyzerNameKeyword),
+				Retrievable: to.Ptr(true),
+				Filterable:  to.Ptr(false),
+				Sortable:    to.Ptr(true),
+				Facetable:   to.Ptr(false),
+				Searchable:  to.Ptr(true),
+			},
+			{
+				Name:        to.Ptr("parent_id"),
+				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
+				Analyzer:    nil,
+				Retrievable: to.Ptr(true),
+				Filterable:  to.Ptr(true),
+				Sortable:    to.Ptr(false),
+				Facetable:   to.Ptr(false),
+				Searchable:  to.Ptr(false),
+			},
+			{
+				Name:        to.Ptr("chunk"),
+				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
+				Retrievable: to.Ptr(true),
+				Filterable:  to.Ptr(false),
+				Sortable:    to.Ptr(false),
+				Facetable:   to.Ptr(false),
+				Searchable:  to.Ptr(true),
+			},
+			{
+				Name:        to.Ptr("title"),
+				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
+				Retrievable: to.Ptr(true),
+				Filterable:  to.Ptr(false),
+				Sortable:    to.Ptr(false),
+				Facetable:   to.Ptr(false),
+				Searchable:  to.Ptr(true),
+			},
+			{
+				Name:                    to.Ptr("text_vector"),
+				Type:                    to.Ptr(azsearch.SearchFieldDataType("Collection(Edm.Single)")),
+				VectorSearchDimensions:  to.Ptr(int32(1536)),
+				VectorSearchProfileName: to.Ptr("default"),
+				Retrievable:             to.Ptr(true),
+				Filterable:              to.Ptr(false),
+				Sortable:                to.Ptr(false),
+				Facetable:               to.Ptr(false),
+				Searchable:              to.Ptr(true),
+			},
+		},
+		VectorSearch: &azsearch.VectorSearch{
+			Profiles: []*azsearch.VectorSearchProfile{
+				{
+					Name:                       to.Ptr("default"),
+					AlgorithmConfigurationName: to.Ptr("hnsw"),
+				},
+			},
+			Algorithms: []azsearch.VectorSearchAlgorithmConfigurationClassification{
+				&azsearch.HnswAlgorithmConfiguration{
+					Name: to.Ptr("hnsw"),
+					Kind: to.Ptr(azsearch.VectorSearchAlgorithmKindHnsw),
+					Parameters: &azsearch.HnswParameters{
+						Metric:         to.Ptr(azsearch.VectorSearchAlgorithmMetricCosine),
+						M:              to.Ptr(int32(4)),
+						EfConstruction: to.Ptr(int32(400)),
+						EfSearch:       to.Ptr(int32(500)),
+					},
+				},
+			},
+		},
+	}
 }

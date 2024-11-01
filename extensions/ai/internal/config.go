@@ -12,18 +12,28 @@ import (
 )
 
 type AiConfig struct {
-	Subscription     string       `json:"subscription"`
-	ResourceGroup    string       `json:"resourceGroup"`
-	Service          string       `json:"service"`
-	Models           ModelsConfig `json:"models"`
-	StorageAccount   string       `json:"storage"`
-	StorageContainer string       `json:"container"`
+	Subscription  string        `json:"subscription"`
+	ResourceGroup string        `json:"resourceGroup"`
+	Service       string        `json:"service"`
+	Models        ModelsConfig  `json:"models"`
+	Search        SearchConfig  `json:"search"`
+	Storage       StorageConfig `json:"storage"`
+}
+
+type StorageConfig struct {
+	Account   string `json:"account"`
+	Container string `json:"container"`
 }
 
 type ModelsConfig struct {
-	ChatCompletion string
-	Embeddings     string
-	Audio          string
+	ChatCompletion string `json:"chatCompletion"`
+	Embeddings     string `json:"embeddings"`
+	Audio          string `json:"audio"`
+}
+
+type SearchConfig struct {
+	Service string `json:"service"`
+	Index   string `json:"index"`
 }
 
 var (

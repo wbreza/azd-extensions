@@ -84,26 +84,26 @@ func newUploadCommand() *cobra.Command {
 				return err
 			}
 
-			if aiConfig.StorageAccount == "" {
+			if aiConfig.Storage.Account == "" {
 				storageAccount, err := internal.PromptStorageAccount(ctx, azdContext, aiConfig)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.StorageAccount = *storageAccount.Name
+				aiConfig.Storage.Account = *storageAccount.Name
 			}
 
 			if flags.Container != "" {
-				aiConfig.StorageContainer = flags.Container
+				aiConfig.Storage.Container = flags.Container
 			}
 
-			if aiConfig.StorageContainer == "" {
+			if aiConfig.Storage.Container == "" {
 				container, err := internal.PromptStorageContainer(ctx, azdContext, aiConfig)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.StorageContainer = *container.Name
+				aiConfig.Storage.Container = *container.Name
 			}
 
 			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
@@ -111,8 +111,8 @@ func newUploadCommand() *cobra.Command {
 			}
 
 			storageConfig := &storage.AccountConfig{
-				AccountName:   aiConfig.StorageAccount,
-				ContainerName: aiConfig.StorageContainer,
+				AccountName:   aiConfig.Storage.Account,
+				ContainerName: aiConfig.Storage.Container,
 			}
 
 			err = azdContext.Invoke(func(clientOptions *azcore.ClientOptions) error {
@@ -137,7 +137,7 @@ func newUploadCommand() *cobra.Command {
 					ClientOptions: *clientOptions,
 				}
 
-				serviceUrl := fmt.Sprintf("https://%s.blob.core.windows.net", aiConfig.StorageAccount)
+				serviceUrl := fmt.Sprintf("https://%s.blob.core.windows.net", aiConfig.Storage.Account)
 				azBlobClient, err := azblob.NewClient(serviceUrl, credential, blobClientOptions)
 				if err != nil {
 					return err
