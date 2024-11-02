@@ -20,6 +20,7 @@ const (
 	RoleDefinitionStorageBlobDataContributor RoleName = "Storage Blob Data Contributor"
 	RoleCognitiveServicesOpenAIContributor   RoleName = "Cognitive Services OpenAI Contributor"
 	RoleSearchIndexDataContributor           RoleName = "Search Index Data Contributor"
+	RoleSearchIndexDataReader                RoleName = "Search Index Data Reader"
 	RoleSearchServiceContributor             RoleName = "Search Service Contributor"
 )
 

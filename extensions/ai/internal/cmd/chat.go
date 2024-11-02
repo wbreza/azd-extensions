@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -16,18 +16,15 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
-	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearchindex"
 )
 
 type chatUsageFlags struct {
-	message        string
-	systemMessage  string
-	subscriptionId string
-	resourceGroup  string
-	serviceName    string
-	modelName      string
-	temperature    float32
-	maxTokens      int32
+	message       string
+	systemMessage string
+	modelName     string
+	temperature   float32
+	maxTokens     int32
+	useSearch     bool
 }
 
 var (
@@ -37,7 +34,7 @@ var (
 )
 
 func newChatCommand() *cobra.Command {
-	chatFlags := &chatUsageFlags{}
+	flags := &chatUsageFlags{}
 
 	chatCmd := &cobra.Command{
 		Use:   "chat",
@@ -58,8 +55,8 @@ func newChatCommand() *cobra.Command {
 			var armClientOptions *arm.ClientOptions
 			var azClientOptions *azcore.ClientOptions
 
-			azdContext.Invoke(func(clientOptions *arm.ClientOptions, options2 *azcore.ClientOptions) error {
-				armClientOptions = clientOptions
+			azdContext.Invoke(func(options1 *arm.ClientOptions, options2 *azcore.ClientOptions) error {
+				armClientOptions = options1
 				azClientOptions = options2
 				return nil
 			})
@@ -69,28 +66,19 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			var aiConfig *internal.AiConfig
-			if chatFlags.subscriptionId != "" && chatFlags.resourceGroup != "" && chatFlags.serviceName != "" {
-				aiConfig = &internal.AiConfig{
-					Subscription:  chatFlags.subscriptionId,
-					ResourceGroup: chatFlags.resourceGroup,
-					Service:       chatFlags.serviceName,
-				}
-			} else {
-				aiConfig, err = internal.LoadOrPromptAiConfig(ctx, azdContext)
-				if err != nil {
-					return err
-				}
+			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			if err != nil {
+				return err
 			}
 
-			if chatFlags.modelName != "" {
-				aiConfig.Models.ChatCompletion = chatFlags.modelName
+			if flags.modelName != "" {
+				aiConfig.Models.ChatCompletion = flags.modelName
 			}
 
 			if aiConfig.Models.ChatCompletion == "" {
 				color.Yellow("No chat completion model was found. Please select or create a chat completion model.")
 
-				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+				chatDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
 					Capabilities: []string{
 						"chatCompletion",
 					},
@@ -105,12 +93,45 @@ func newChatCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig.Models.ChatCompletion = *selectedDeployment.Name
-				if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
-					return err
+				aiConfig.Models.ChatCompletion = *chatDeployment.Name
+				fmt.Println()
+			}
+
+			if flags.useSearch {
+				if aiConfig.Search.Service == "" {
+					searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+					if err != nil {
+						return err
+					}
+
+					aiConfig.Search.Service = *searchService.Name
 				}
 
-				fmt.Println()
+				if aiConfig.Search.Index == "" {
+					searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+					if err != nil {
+						return err
+					}
+
+					aiConfig.Search.Index = *searchIndex.Name
+				}
+
+				if aiConfig.Models.Embeddings == "" {
+					embeddingDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+						Capabilities: []string{
+							"embeddings",
+						},
+					})
+					if err != nil {
+						return err
+					}
+
+					aiConfig.Models.Embeddings = *embeddingDeployment.Name
+				}
+			}
+
+			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+				return err
 			}
 
 			loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
@@ -131,7 +152,7 @@ func newChatCommand() *cobra.Command {
 			}
 
 			aiEndpoint := *account.Properties.Endpoint
-			openAiClient, err := azopenai.NewClient(aiEndpoint, credential, nil)
+			openAiClient, err := azopenai.NewClient(aiEndpoint, credential, &azopenai.ClientOptions{ClientOptions: *azClientOptions})
 			if err != nil {
 				return err
 			}
@@ -146,39 +167,34 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
+			hasVectorSearch := aiConfig.Search.Service != "" && aiConfig.Search.Index != "" && aiConfig.Models.Embeddings != ""
+
 			loadingSpinner.Stop(ctx)
 
 			fmt.Printf("AI Service: %s %s\n", color.CyanString(aiConfig.Service), color.HiBlackString("(%s)", aiConfig.ResourceGroup))
-			fmt.Printf("Model: %s %s\n", color.CyanString(aiConfig.Models.ChatCompletion), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
-			fmt.Printf("System Message: %s\n", color.CyanString(chatFlags.systemMessage))
-			fmt.Printf("Temperature: %s %s\n", color.CyanString(fmt.Sprint(chatFlags.temperature)), color.HiBlackString("(Controls randomness)"))
-			fmt.Printf("Max Tokens: %s %s\n", color.CyanString(fmt.Sprint(chatFlags.maxTokens)), color.HiBlackString("(Maximum number of tokens to generate)"))
+			fmt.Printf("Chat Model: %s %s\n", color.CyanString(aiConfig.Models.ChatCompletion), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
+			fmt.Println()
+			if hasVectorSearch {
+				fmt.Printf("Search Service: %s %s\n", color.CyanString(aiConfig.Search.Service), color.HiBlackString("(%s)", aiConfig.Search.Index))
+				fmt.Printf("Search Index: %s\n", color.CyanString(aiConfig.Search.Index))
+				fmt.Printf("Embeddings Model: %s\n", color.CyanString(aiConfig.Models.Embeddings))
+				fmt.Println()
+			}
+			fmt.Printf("System Message: %s\n", color.CyanString(flags.systemMessage))
+			fmt.Printf("Temperature: %s %s\n", color.CyanString(fmt.Sprint(flags.temperature)), color.HiBlackString("(Controls randomness)"))
+			fmt.Printf("Max Tokens: %s %s\n", color.CyanString(fmt.Sprint(flags.maxTokens)), color.HiBlackString("(Maximum number of tokens to generate)"))
 			fmt.Println()
 
 			messages := []azopenai.ChatRequestMessageClassification{}
 			messages = append(messages, &azopenai.ChatRequestSystemMessage{
-				Content: azopenai.NewChatRequestSystemMessageContent(chatFlags.systemMessage),
+				Content: azopenai.NewChatRequestSystemMessageContent(flags.systemMessage),
 			})
 
 			thinkingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
 				Text: "Thinking...",
 			})
 
-			userMessage := chatFlags.message
-
-			var hasVectorSearch bool
-			var documentsClient *azsearchindex.DocumentsClient
-
-
-			if aiConfig.Search.Service != "" && aiConfig.Search.Index != "" {
-				searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
-				documentsClient, err = azsearchindex.NewDocumentsClient(searchEndpoint, aiConfig.Search.Index, credential, azClientOptions))
-				if err != nil {
-					return err
-				}
-
-				hasVectorSearch = true
-			}
+			userMessage := flags.message
 
 			for {
 				var err error
@@ -211,28 +227,42 @@ func newChatCommand() *cobra.Command {
 				})
 
 				var chatResponse *azopenai.ChatCompletions
+				var azureExtensionOptions []azopenai.AzureChatExtensionConfigurationClassification
+
+				if hasVectorSearch {
+					// TODO: Move to manual search and include context
+					searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
+
+					azureExtensionOptions = []azopenai.AzureChatExtensionConfigurationClassification{
+						&azopenai.AzureSearchChatExtensionConfiguration{
+							Parameters: &azopenai.AzureSearchChatExtensionParameters{
+								Endpoint:       &searchEndpoint,
+								IndexName:      &aiConfig.Search.Index,
+								Authentication: &azopenai.OnYourDataSystemAssignedManagedIdentityAuthenticationOptions{},
+								QueryType:      to.Ptr(azopenai.AzureSearchQueryTypeVector),
+								EmbeddingDependency: &azopenai.OnYourDataDeploymentNameVectorizationSource{
+									DeploymentName: &aiConfig.Models.Embeddings,
+									Type:           to.Ptr(azopenai.OnYourDataVectorizationSourceTypeDeploymentName),
+								},
+								FieldsMapping: &azopenai.AzureSearchIndexFieldMappingOptions{
+									ContentFields: []string{"chunk"},
+									VectorFields:  []string{"text_vector"},
+								},
+								TopNDocuments:      to.Ptr(int32(2)),
+								AllowPartialResult: to.Ptr(true),
+							},
+						},
+					}
+				}
 
 				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
-					if hasVectorSearch {
-						log.Println("Vector search is enabled")
-						// documentsClient.SearchPost(ctx, azsearchindex.SearchRequest{
-						// 	QueryType: azsearchindex.QueryTypeFull,
-						// 	VectorQueries: []azsearchindex.VectorQueryClassification{
-						// 		{
-						// 			azsearchindex.VectorQuery{
-						// 				,
-						// 			}
-						// 		}
-						// 	},
-						// }, nil, nil)
-					}
-
 					response, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
-						Messages:       messages,
-						DeploymentName: &aiConfig.Models.ChatCompletion,
-						Temperature:    &chatFlags.temperature,
-						ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
-						MaxTokens:      &chatFlags.maxTokens,
+						Messages:               messages,
+						DeploymentName:         &aiConfig.Models.ChatCompletion,
+						Temperature:            &flags.temperature,
+						ResponseFormat:         &azopenai.ChatCompletionsTextResponseFormat{},
+						MaxTokens:              to.Ptr(int32(5000)),
+						AzureExtensionsOptions: azureExtensionOptions,
 					}, nil)
 					if err != nil {
 						return err
@@ -250,7 +280,9 @@ func newChatCommand() *cobra.Command {
 					fmt.Printf("%s: %s\n", color.CyanString("AI"), *choice.Message.Content)
 				}
 
+				fmt.Printf("%s: Completion: %d, Prompt: %d, Total: %d\n", color.YellowString("Usage"), *chatResponse.Usage.CompletionTokens, *chatResponse.Usage.PromptTokens, *chatResponse.Usage.TotalTokens)
 				fmt.Println()
+
 				userMessage = ""
 			}
 
@@ -258,14 +290,12 @@ func newChatCommand() *cobra.Command {
 		},
 	}
 
-	chatCmd.Flags().StringVar(&chatFlags.systemMessage, "system-message", defaultSystemMessage, "System message to send to the AI model")
-	chatCmd.Flags().Float32Var(&chatFlags.temperature, "temperature", defaultTemperature, "Temperature for sampling")
-	chatCmd.Flags().Int32Var(&chatFlags.maxTokens, "max-tokens", defaultMaxTokens, "Maximum number of tokens to generate")
-	chatCmd.Flags().StringVarP(&chatFlags.message, "message", "m", "", "Message to send to the AI model")
-	chatCmd.Flags().StringVarP(&chatFlags.modelName, "model deployment name", "d", "", "Name of the model to use")
-	chatCmd.Flags().StringVarP(&chatFlags.resourceGroup, "resource-group", "g", "", "Azure resource group")
-	chatCmd.Flags().StringVarP(&chatFlags.serviceName, "name", "n", "", "Azure AI service name")
-	chatCmd.Flags().StringVarP(&chatFlags.subscriptionId, "subscription", "s", "", "Azure subscription ID")
+	chatCmd.Flags().StringVar(&flags.systemMessage, "system-message", defaultSystemMessage, "System message to send to the AI model")
+	chatCmd.Flags().Float32Var(&flags.temperature, "temperature", defaultTemperature, "Temperature for sampling")
+	chatCmd.Flags().Int32Var(&flags.maxTokens, "max-tokens", defaultMaxTokens, "Maximum number of tokens to generate")
+	chatCmd.Flags().StringVarP(&flags.message, "message", "m", "", "Message to send to the AI model")
+	chatCmd.Flags().StringVarP(&flags.modelName, "model deployment name", "d", "", "Name of the model to use")
+	chatCmd.Flags().BoolVar(&flags.useSearch, "use-search", false, "Use Azure Cognitive Search for search results")
 
 	return chatCmd
 }

@@ -789,12 +789,13 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 					},
 				}).
 				AddTask(ux.TaskOptions{
-					Title: "Creating role assignments",
+					Title: "Creating role assignments for current user",
 					Action: func() (ux.TaskState, error) {
 						if aiSearchService == nil {
 							return ux.Skipped, errors.New("Azure AI Service service creation failed")
 						}
 
+						// Assign roles to current logged in user
 						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
@@ -802,6 +803,47 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 								*aiSearchService.ID,
 								principal.Oid,
 								azure.RoleSearchIndexDataContributor,
+								azure.RoleSearchServiceContributor,
+							)
+							if err != nil {
+								return err
+							}
+
+							return nil
+						})
+
+						if err != nil {
+							return ux.Error, err
+						}
+
+						return ux.Success, nil
+					},
+				}).
+				AddTask(ux.TaskOptions{
+					Title: "Creating role assignments for AI service account",
+					Action: func() (ux.TaskState, error) {
+						if aiSearchService == nil {
+							return ux.Skipped, errors.New("Azure AI Service service creation failed")
+						}
+
+						accountsClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						aiAccount, err := accountsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						// Assign roles to AI service account
+						err = azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
+							err := rbacClient.EnsureRoleAssignment(
+								ctx,
+								aiConfig.Subscription,
+								*aiSearchService.ID,
+								*aiAccount.Identity.PrincipalID,
+								azure.RoleSearchIndexDataReader,
 								azure.RoleSearchServiceContributor,
 							)
 							if err != nil {
