@@ -171,14 +171,28 @@ func newGenerateCommand() *cobra.Command {
 						return err
 					}
 
+					content := string(jsonBytes)
+
 					taskList.AddTask(ux.TaskOptions{
 						Title: fmt.Sprintf("Generating embeddings for document %s", relativePath),
 						Async: true,
 						Action: func() (ux.TaskState, error) {
-							embeddingText := string(jsonBytes)
-							embeddingText = strings.ReplaceAll(embeddingText, "\n", " ")
-							embeddingText = strings.ReplaceAll(embeddingText, "\r", " ")
-							embeddingText = strings.ReplaceAll(embeddingText, "\t", " ")
+							completionsResponse, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
+								Messages: []azopenai.ChatRequestMessageClassification{
+									&azopenai.ChatRequestSystemMessage{
+										Content: azopenai.NewChatRequestSystemMessageContent("You are helping generate summary embeddings for specified document. Please provide a summary of the document."),
+									},
+									&azopenai.ChatRequestUserMessage{
+										Content: azopenai.NewChatRequestUserMessageContent(content),
+									},
+								},
+								DeploymentName: &aiConfig.Models.ChatCompletion,
+							}, nil)
+							if err != nil {
+								return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
+							}
+
+							embeddingText := *completionsResponse.ChatCompletions.Choices[0].Message.Content
 
 							response, err := openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
 								Input: []string{

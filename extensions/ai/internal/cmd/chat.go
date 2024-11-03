@@ -248,7 +248,7 @@ func newChatCommand() *cobra.Command {
 									ContentFields: []string{"chunk"},
 									VectorFields:  []string{"text_vector"},
 								},
-								TopNDocuments:      to.Ptr(int32(2)),
+								TopNDocuments:      to.Ptr(int32(3)),
 								AllowPartialResult: to.Ptr(true),
 							},
 						},
