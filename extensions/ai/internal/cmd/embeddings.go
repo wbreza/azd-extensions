@@ -205,7 +205,7 @@ func newGenerateCommand() *cobra.Command {
 								return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
 							}
 
-							contentHash := sha256.Sum256([]byte(embeddingText))
+							contentHash := sha256.Sum256([]byte(relativePath))
 
 							embeddingDoc := EmbeddingDocument{
 								Title:      relativePath,

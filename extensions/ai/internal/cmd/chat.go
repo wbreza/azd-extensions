@@ -2,8 +2,11 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,6 +19,7 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
+	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearchindex"
 )
 
 type chatUsageFlags struct {
@@ -194,6 +198,7 @@ func newChatCommand() *cobra.Command {
 				Text: "Thinking...",
 			})
 
+			totalTokenCount := 0
 			userMessage := flags.message
 
 			for {
@@ -222,47 +227,75 @@ func newChatCommand() *cobra.Command {
 				fmt.Printf("%s: %s\n", color.GreenString("User"), color.HiBlackString(userMessage))
 				fmt.Println()
 
+				if hasVectorSearch {
+					embeddingsResponse, err := openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
+						Input:          []string{userMessage},
+						DeploymentName: &aiConfig.Models.Embeddings,
+					}, nil)
+					if err != nil {
+						return err
+					}
+
+					searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
+					searchClient, err := azsearchindex.NewDocumentsClient(searchEndpoint, aiConfig.Search.Index, credential, azClientOptions)
+					if err != nil {
+						return err
+					}
+
+					searchResponse, err := searchClient.SearchPost(ctx, azsearchindex.SearchRequest{
+						Select:    to.Ptr("chunk_id, chunk, title"),
+						QueryType: to.Ptr(azsearchindex.QueryTypeSimple),
+						VectorQueries: []azsearchindex.VectorQueryClassification{
+							&azsearchindex.VectorizedQuery{
+								Kind:       to.Ptr(azsearchindex.VectorQueryKindVector),
+								Fields:     to.Ptr("text_vector"),
+								Exhaustive: to.Ptr(true),
+								K:          to.Ptr(int32(3)),
+								Vector:     convertToFloatPtrSlice(embeddingsResponse.Data[0].Embedding),
+							},
+						},
+					}, nil, nil)
+					if err != nil {
+						return nil
+					}
+
+					if len(searchResponse.Results) > 0 {
+						contextResults := make([]string, len(searchResponse.Results))
+
+						for i, result := range searchResponse.Results {
+							contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["chunk"]))
+							log.Printf("Title: %s, Score: %f\n", result.AdditionalProperties["title"], *result.Score)
+						}
+
+						userMessage = fmt.Sprintf("Question: \"%s\"\n\nContext:\n%s", userMessage, strings.Join(contextResults, "\n\n"))
+					}
+				}
+
+				if totalTokenCount > 1500 {
+					summarizedMessage, err := summarizeMessages(ctx, openAiClient, messages, aiConfig)
+					if err != nil {
+						return err
+					}
+
+					messages = []azopenai.ChatRequestMessageClassification{&azopenai.ChatRequestUserMessage{
+						Content: azopenai.NewChatRequestUserMessageContent(summarizedMessage),
+					}}
+
+					log.Printf("Summarized message: %s\n", summarizedMessage)
+				}
+
+				var chatResponse *azopenai.ChatCompletions
 				messages = append(messages, &azopenai.ChatRequestUserMessage{
 					Content: azopenai.NewChatRequestUserMessageContent(userMessage),
 				})
 
-				var chatResponse *azopenai.ChatCompletions
-				var azureExtensionOptions []azopenai.AzureChatExtensionConfigurationClassification
-
-				if hasVectorSearch {
-					// TODO: Move to manual search and include context
-					searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
-
-					azureExtensionOptions = []azopenai.AzureChatExtensionConfigurationClassification{
-						&azopenai.AzureSearchChatExtensionConfiguration{
-							Parameters: &azopenai.AzureSearchChatExtensionParameters{
-								Endpoint:       &searchEndpoint,
-								IndexName:      &aiConfig.Search.Index,
-								Authentication: &azopenai.OnYourDataSystemAssignedManagedIdentityAuthenticationOptions{},
-								QueryType:      to.Ptr(azopenai.AzureSearchQueryTypeVector),
-								EmbeddingDependency: &azopenai.OnYourDataDeploymentNameVectorizationSource{
-									DeploymentName: &aiConfig.Models.Embeddings,
-									Type:           to.Ptr(azopenai.OnYourDataVectorizationSourceTypeDeploymentName),
-								},
-								FieldsMapping: &azopenai.AzureSearchIndexFieldMappingOptions{
-									ContentFields: []string{"chunk"},
-									VectorFields:  []string{"text_vector"},
-								},
-								TopNDocuments:      to.Ptr(int32(3)),
-								AllowPartialResult: to.Ptr(true),
-							},
-						},
-					}
-				}
-
 				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
 					response, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
-						Messages:               messages,
-						DeploymentName:         &aiConfig.Models.ChatCompletion,
-						Temperature:            &flags.temperature,
-						ResponseFormat:         &azopenai.ChatCompletionsTextResponseFormat{},
-						MaxTokens:              to.Ptr(int32(5000)),
-						AzureExtensionsOptions: azureExtensionOptions,
+						Messages:       messages,
+						DeploymentName: &aiConfig.Models.ChatCompletion,
+						Temperature:    &flags.temperature,
+						ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
+						MaxTokens:      to.Ptr(flags.maxTokens),
 					}, nil)
 					if err != nil {
 						return err
@@ -280,9 +313,16 @@ func newChatCommand() *cobra.Command {
 					fmt.Printf("%s: %s\n", color.CyanString("AI"), *choice.Message.Content)
 				}
 
+				assistantMessage := *chatResponse.Choices[0].Message.Content
+
+				messages = append(messages, &azopenai.ChatRequestAssistantMessage{
+					Content: azopenai.NewChatRequestAssistantMessageContent(assistantMessage),
+				})
+
 				fmt.Printf("%s: Completion: %d, Prompt: %d, Total: %d\n", color.YellowString("Usage"), *chatResponse.Usage.CompletionTokens, *chatResponse.Usage.PromptTokens, *chatResponse.Usage.TotalTokens)
 				fmt.Println()
 
+				totalTokenCount += ((len(userMessage) / 4) + (len(assistantMessage) / 4))
 				userMessage = ""
 			}
 
@@ -298,4 +338,61 @@ func newChatCommand() *cobra.Command {
 	chatCmd.Flags().BoolVar(&flags.useSearch, "use-search", false, "Use Azure Cognitive Search for search results")
 
 	return chatCmd
+}
+
+func convertToFloatPtrSlice(input []float32) []*float32 {
+	result := make([]*float32, len(input))
+	for i := range input {
+		result[i] = &input[i]
+	}
+
+	return result
+}
+
+func summarizeMessages(ctx context.Context, openAiClient *azopenai.Client, messages []azopenai.ChatRequestMessageClassification, aiConfig *internal.AiConfig) (string, error) {
+	// Concatenate message content to form a single text
+	var content []string
+	for _, msg := range messages {
+		switch m := msg.(type) {
+
+		case *azopenai.ChatRequestUserMessage:
+			contentBytes, err := json.Marshal(m.Content)
+			if err != nil {
+				continue
+			}
+
+			content = append(content, fmt.Sprintf("User: %s", string(contentBytes)))
+		case *azopenai.ChatRequestAssistantMessage:
+			contentBytes, err := json.Marshal(m.Content)
+			if err != nil {
+				continue
+			}
+
+			content = append(content, fmt.Sprintf("AI: %s", string(contentBytes)))
+		}
+	}
+
+	// Create a summarization prompt
+	summarizationPrompt := fmt.Sprintf("Summarize the following conversation:\n\n%s", strings.Join(content, "\n"))
+	log.Printf("Summarization prompt: %s\n", summarizationPrompt)
+
+	// Send to OpenAI for summarization
+	response, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
+		Messages: []azopenai.ChatRequestMessageClassification{
+			&azopenai.ChatRequestUserMessage{
+				Content: azopenai.NewChatRequestUserMessageContent(summarizationPrompt),
+			},
+		},
+		DeploymentName: &aiConfig.Models.ChatCompletion,
+		MaxTokens:      to.Ptr(int32(500)), // Adjust token limit for summary response
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+
+	// Extract summarized content
+	if len(response.Choices) > 0 {
+		return *response.Choices[0].Message.Content, nil
+	}
+	return "", errors.New("no summary generated")
 }

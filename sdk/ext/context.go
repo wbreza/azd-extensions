@@ -231,7 +231,7 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 				Cloud: cloud.Configuration,
 				Logging: policy.LogOptions{
 					AllowedHeaders: []string{azure.MsCorrelationIdHeader},
-					IncludeBody:    true,
+					IncludeBody:    false,
 				},
 				PerCallPolicies: []policy.Policy{
 					azure.NewMsCorrelationPolicy(),
@@ -247,7 +247,7 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 			Cloud: cloud.Configuration,
 			Logging: policy.LogOptions{
 				AllowedHeaders: []string{azure.MsCorrelationIdHeader},
-				IncludeBody:    true,
+				IncludeBody:    false,
 			},
 			PerCallPolicies: []policy.Policy{
 				azure.NewMsCorrelationPolicy(),
