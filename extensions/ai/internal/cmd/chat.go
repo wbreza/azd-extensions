@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -296,12 +297,47 @@ func newChatCommand() *cobra.Command {
 						Temperature:    &flags.temperature,
 						ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
 						MaxTokens:      to.Ptr(flags.maxTokens),
+						Functions: []azopenai.FunctionDefinition{
+							{
+								Name:        to.Ptr("get-current-time"),
+								Description: to.Ptr("Get the current date and time"),
+								Parameters:  nil,
+							},
+						},
 					}, nil)
 					if err != nil {
 						return err
 					}
 
 					chatResponse = &response.ChatCompletions
+					if chatResponse.Choices[0].Message.FunctionCall != nil && *chatResponse.Choices[0].Message.FunctionCall.Name == "get-current-time" {
+						data := getDateTime()
+
+						messages = append(messages, &azopenai.ChatRequestAssistantMessage{
+							Name:    to.Ptr("get-current-time"),
+							Content: azopenai.NewChatRequestAssistantMessageContent(data),
+						})
+
+						functionResponse, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
+							Messages:       messages,
+							DeploymentName: &aiConfig.Models.ChatCompletion,
+							Temperature:    &flags.temperature,
+							ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
+							MaxTokens:      to.Ptr(flags.maxTokens),
+							Functions: []azopenai.FunctionDefinition{
+								{
+									Name:        to.Ptr("get-current-time"),
+									Description: to.Ptr("Get the current date and time"),
+									Parameters:  nil,
+								},
+							},
+						}, nil)
+						if err != nil {
+							return err
+						}
+
+						chatResponse = &functionResponse.ChatCompletions
+					}
 					return nil
 				})
 
@@ -338,6 +374,10 @@ func newChatCommand() *cobra.Command {
 	chatCmd.Flags().BoolVar(&flags.useSearch, "use-search", false, "Use Azure Cognitive Search for search results")
 
 	return chatCmd
+}
+
+func getDateTime() string {
+	return time.Now().Format(time.RFC1123)
 }
 
 func convertToFloatPtrSlice(input []float32) []*float32 {
