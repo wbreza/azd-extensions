@@ -16,6 +16,7 @@ func NewRootCommand() *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	rootCmd.AddCommand(newSetupCommand())
 	rootCmd.AddCommand(newModelCommand())
 	rootCmd.AddCommand(newServiceCommand())
 	rootCmd.AddCommand(newChatCommand())

@@ -6,12 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
-	"github.com/wbreza/azd-extensions/sdk/azure/storage"
 	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
@@ -21,19 +18,9 @@ import (
 // Flag structs for the azd ai document commands
 type UploadFlags struct {
 	Source    string
+	Force     bool
 	Container string
 	Pattern   string
-}
-
-type ListFlags struct {
-	Container string
-	Prefix    string
-}
-
-type DeleteFlags struct {
-	Container string
-	File      string
-	Recursive bool
 }
 
 // Command to initialize `azd ai document` command group
@@ -70,9 +57,8 @@ func newUploadCommand() *cobra.Command {
 				return err
 			}
 
-			credential, err := azdContext.Credential()
-			if err != nil {
-				return err
+			if flags.Pattern == "" {
+				flags.Pattern = "*"
 			}
 
 			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
@@ -110,78 +96,73 @@ func newUploadCommand() *cobra.Command {
 				return err
 			}
 
-			storageConfig := &storage.AccountConfig{
-				AccountName:   aiConfig.Storage.Account,
-				ContainerName: aiConfig.Storage.Container,
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalf("Error getting current working directory: %v", err)
 			}
 
-			err = azdContext.Invoke(func(clientOptions *azcore.ClientOptions) error {
-				cwd, err := os.Getwd()
-				if err != nil {
-					log.Fatalf("Error getting current working directory: %v", err)
-				}
-
-				// Combine the current working directory with the relative path
-				absolutePath := filepath.Join(cwd, flags.Source)
-
-				matchingFiles, err := getMatchingFiles(absolutePath, flags.Pattern, true)
-				if err != nil {
-					return err
-				}
-
-				if len(matchingFiles) == 0 {
-					return fmt.Errorf("no files found matching the pattern '%s'", flags.Pattern)
-				}
-
-				blobClientOptions := &azblob.ClientOptions{
-					ClientOptions: *clientOptions,
-				}
-
-				serviceUrl := fmt.Sprintf("https://%s.blob.core.windows.net", aiConfig.Storage.Account)
-				azBlobClient, err := azblob.NewClient(serviceUrl, credential, blobClientOptions)
-				if err != nil {
-					return err
-				}
-
-				blobService := storage.NewBlobClient(storageConfig, azBlobClient)
-				taskList := ux.NewTaskList(nil)
-
-				// Walk through the directory and upload each file
-				for _, file := range matchingFiles {
-					relativePath, err := filepath.Rel(cwd, file)
-					if err != nil {
-						return err
-					}
-
-					taskList.AddTask(ux.TaskOptions{
-						Title: fmt.Sprintf("Uploading document %s", color.CyanString(relativePath)),
-						Async: true,
-						Action: func() (ux.TaskState, error) {
-							file, err := os.Open(file)
-							if err != nil {
-								return ux.Error, err
-							}
-
-							defer file.Close()
-
-							err = blobService.Upload(ctx, relativePath, file)
-							if err != nil {
-								return ux.Error, common.NewDetailedError("Failed to upload document", err)
-							}
-
-							return ux.Success, nil
-						},
-					})
-				}
-
-				if err := taskList.Run(); err != nil {
-					return err
-				}
-
-				return nil
-			})
-
+			// Combine the current working directory with the relative path
+			absSourcePath := filepath.Join(cwd, flags.Source)
+			matchingFiles, err := getMatchingFiles(absSourcePath, flags.Pattern, true)
 			if err != nil {
+				return err
+			}
+
+			if len(matchingFiles) == 0 {
+				return fmt.Errorf("no files found matching the pattern '%s'", flags.Pattern)
+			}
+
+			fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
+			fmt.Printf("Storage Account: %s\n", color.CyanString(aiConfig.Storage.Account))
+			fmt.Printf("Storage Container: %s\n", color.CyanString(aiConfig.Storage.Container))
+
+			if !flags.Force {
+				fmt.Println()
+				fmt.Printf("Found %s matching files with pattern %s.\n", color.CyanString(fmt.Sprint(len(matchingFiles))), color.CyanString(flags.Pattern))
+
+				continueConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+					DefaultValue: ux.Ptr(true),
+					Message:      "Continue uploading documents?",
+				})
+
+				userConfirmed, err := continueConfirm.Ask()
+				if err != nil {
+					return err
+				}
+
+				if !*userConfirmed {
+					return ux.ErrCancelled
+				}
+			}
+
+			taskList := ux.NewTaskList(nil)
+
+			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+			if err != nil {
+				return err
+			}
+
+			// Walk through the directory and upload each file
+			for _, file := range matchingFiles {
+				relativePath, err := filepath.Rel(cwd, file)
+				if err != nil {
+					return err
+				}
+
+				taskList.AddTask(ux.TaskOptions{
+					Title: fmt.Sprintf("Uploading document %s", color.CyanString(relativePath)),
+					Async: true,
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
+						if err := docPrepService.Upload(ctx, file, relativePath); err != nil {
+							return ux.Error, common.NewDetailedError("Failed to upload document", err)
+						}
+
+						return ux.Success, nil
+					},
+				})
+			}
+
+			if err := taskList.Run(); err != nil {
 				return err
 			}
 
@@ -192,7 +173,8 @@ func newUploadCommand() *cobra.Command {
 	// Define flags for `upload` command
 	uploadCmd.Flags().StringVar(&flags.Source, "source", "", "Path to the local file or directory to upload (required)")
 	uploadCmd.Flags().StringVar(&flags.Container, "container", "", "Azure Blob Storage container name to upload to (required)")
-	uploadCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file type pattern to upload (e.g., '.pdf', '.txt')")
+	uploadCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file type pattern to upload (e.g., '*.pdf', '*.txt')")
+	uploadCmd.Flags().BoolVarP(&flags.Force, "force", "f", false, "Upload without confirmation")
 
 	_ = uploadCmd.MarkFlagRequired("source")
 

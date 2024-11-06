@@ -345,11 +345,14 @@ func newChatCommand() *cobra.Command {
 					return err
 				}
 
-				for _, choice := range chatResponse.Choices {
-					fmt.Printf("%s: %s\n", color.CyanString("AI"), *choice.Message.Content)
-				}
+				var assistantMessage string
 
-				assistantMessage := *chatResponse.Choices[0].Message.Content
+				for _, choice := range chatResponse.Choices {
+					if choice.Message != nil && choice.Message.Content != nil {
+						assistantMessage = *choice.Message.Content
+						fmt.Printf("%s: %s\n", color.CyanString("AI"), assistantMessage)
+					}
+				}
 
 				messages = append(messages, &azopenai.ChatRequestAssistantMessage{
 					Content: azopenai.NewChatRequestAssistantMessageContent(assistantMessage),

@@ -194,7 +194,7 @@ func newDeploymentCommand() *cobra.Command {
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						if !*confirmed {
 							return ux.Skipped, ux.ErrCancelled
 						}
@@ -264,7 +264,7 @@ func newDeploymentCommand() *cobra.Command {
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: "Save AI configuration",
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
 							return ux.Error, err
 						}

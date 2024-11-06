@@ -83,7 +83,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						account := armcognitiveservices.Account{
 							Name: &accountName,
 							Identity: &armcognitiveservices.Identity{
@@ -118,7 +118,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 				}).
 				AddTask(ux.TaskOptions{
 					Title: "Creating role assignments",
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						if aiService == nil {
 							return ux.Skipped, errors.New("Azure AI service account creation failed")
 						}
@@ -306,7 +306,7 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						existingDeployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, nil)
 						if err == nil && *existingDeployment.Name == deploymentName {
 							return ux.Error, errors.New("deployment with the same name already exists")
@@ -511,7 +511,7 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						accountCreateParams := armstorage.AccountCreateParameters{
 							Location: &resourceGroup.Location,
 							SKU: &armstorage.SKU{
@@ -542,7 +542,7 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 				}).
 				AddTask(ux.TaskOptions{
 					Title: "Assigning Storage Blob Data Contributor role",
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						if storageAccount == nil {
 							return ux.Skipped, errors.New("Storage account creation failed")
 						}
@@ -661,7 +661,7 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						newContainer := armstorage.BlobContainer{
 							Name: &containerName,
 							ContainerProperties: &armstorage.ContainerProperties{
@@ -750,7 +750,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						searchService := armsearch.Service{
 							Name:     &searchName,
 							Location: &resourceGroup.Location,
@@ -790,7 +790,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 				}).
 				AddTask(ux.TaskOptions{
 					Title: "Creating role assignments for current user",
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						if aiSearchService == nil {
 							return ux.Skipped, errors.New("Azure AI Service service creation failed")
 						}
@@ -821,7 +821,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 				}).
 				AddTask(ux.TaskOptions{
 					Title: "Creating role assignments for AI service account",
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						if aiSearchService == nil {
 							return ux.Skipped, errors.New("Azure AI Service service creation failed")
 						}
@@ -969,7 +969,7 @@ func PromptSearchIndex(ctx context.Context, azdContext *ext.Context, aiConfig *A
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						createResponse, err := indexesClient.CreateOrUpdate(ctx, indexName, azsearch.Enum0ReturnRepresentation, *indexSpec, nil, nil)
 						if err != nil {
 							return ux.Error, common.NewDetailedError("Failed to create Azure Search index", err)

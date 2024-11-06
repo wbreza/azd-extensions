@@ -1,20 +1,12 @@
 package cmd
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
@@ -23,36 +15,23 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
-	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearchindex"
 )
 
 // Flag structs for the azd ai embedding commands
 type GenerateFlags struct {
-	Container string
-	Source    string
-	Model     string
-	Output    string
-	BatchSize int
-	Pattern   string
-	Normalize bool
-	Language  string
+	Source  string
+	Model   string
+	Output  string
+	Pattern string
+	Force   bool
 }
 
 type IngestFlags struct {
-	IndexName string
-	Source    string
-	Pattern   string
-	BatchSize int
-	Overwrite bool
-	Transform string
-}
-
-type EmbeddingDocument struct {
-	ChunkId    string    `json:"chunk_id"`
-	ParentId   string    `json:"parent_id"`
-	Chunk      string    `json:"chunk"`
-	Title      string    `json:"title"`
-	TextVector []float32 `json:"text_vector"`
+	ServiceName string
+	IndexName   string
+	Source      string
+	Pattern     string
+	Force       bool
 }
 
 // Command to initialize `azd ai embedding` command group
@@ -89,11 +68,6 @@ func newGenerateCommand() *cobra.Command {
 				return err
 			}
 
-			credential, err := azdContext.Credential()
-			if err != nil {
-				return err
-			}
-
 			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
@@ -101,6 +75,29 @@ func newGenerateCommand() *cobra.Command {
 
 			if flags.Model != "" {
 				aiConfig.Models.Embeddings = flags.Model
+			}
+
+			if flags.Output == "" {
+				flags.Output = "embeddings"
+			}
+
+			if flags.Pattern == "" {
+				flags.Pattern = "*"
+			}
+
+			if aiConfig.Models.ChatCompletion == "" {
+				color.Yellow("No chat completion model was found. Please select or create a chat completion model.")
+
+				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+					Capabilities: []string{
+						"chatCompletion",
+					},
+				})
+				if err != nil {
+					return err
+				}
+
+				aiConfig.Models.ChatCompletion = *selectedModelDeployment.Name
 			}
 
 			if aiConfig.Models.Embeddings == "" {
@@ -116,10 +113,10 @@ func newGenerateCommand() *cobra.Command {
 				}
 
 				aiConfig.Models.Embeddings = *selectedModelDeployment.Name
+			}
 
-				if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
-					return err
-				}
+			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+				return err
 			}
 
 			cwd, err := os.Getwd()
@@ -128,112 +125,71 @@ func newGenerateCommand() *cobra.Command {
 			}
 
 			// Combine the current working directory with the relative path
-			absolutePath := filepath.Join(cwd, flags.Source)
-
-			matchingFiles, err := getMatchingFiles(absolutePath, flags.Pattern, true)
+			absSourcePath := filepath.Join(cwd, flags.Source)
+			matchingFiles, err := getMatchingFiles(absSourcePath, flags.Pattern, true)
 			if err != nil {
 				return err
 			}
 
-			embeddingsOutputPath := filepath.Join(cwd, "embeddings")
-			if err := os.MkdirAll(embeddingsOutputPath, permissions.PermissionDirectory); err != nil {
+			absOutputPath := filepath.Join(cwd, flags.Output)
+
+			fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
+			fmt.Printf("Output Path: %s\n", color.CyanString(absOutputPath))
+
+			if !flags.Force {
+				fmt.Println()
+				fmt.Printf("Found %s matching files with pattern %s.\n", color.CyanString(fmt.Sprint(len(matchingFiles))), color.CyanString(flags.Pattern))
+
+				continueConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+					DefaultValue: ux.Ptr(true),
+					Message:      "Continue generating embeddings?",
+				})
+
+				userConfirmed, err := continueConfirm.Ask()
+				if err != nil {
+					return err
+				}
+
+				if !*userConfirmed {
+					return ux.ErrCancelled
+				}
+			}
+
+			if err := os.MkdirAll(absOutputPath, permissions.PermissionDirectory); err != nil {
 				return err
 			}
 
-			err = azdContext.Invoke(func(clientOptions *arm.ClientOptions) error {
-				accountClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, clientOptions)
+			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+			if err != nil {
+				return err
+			}
+
+			taskList := ux.NewTaskList(nil)
+
+			for _, sourceDocumentPath := range matchingFiles {
+				relativePath, err := filepath.Rel(cwd, sourceDocumentPath)
 				if err != nil {
 					return err
 				}
 
-				account, err := accountClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
-				if err != nil {
-					return err
-				}
+				relativePath = strings.ReplaceAll(relativePath, "\\", "/")
 
-				openAiClient, err := azopenai.NewClient(*account.Properties.Endpoint, credential, nil)
-				if err != nil {
-					return err
-				}
+				taskList.AddTask(ux.TaskOptions{
+					Title: fmt.Sprintf("Generating embeddings for document %s", relativePath),
+					Async: true,
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
+						if _, err := docPrepService.GenerateEmbedding(ctx, sourceDocumentPath, absOutputPath); err != nil {
+							return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
+						}
 
-				taskList := ux.NewTaskList(nil)
+						return ux.Success, nil
+					},
+				})
+			}
 
-				for _, file := range matchingFiles {
-					relativePath, err := filepath.Rel(cwd, file)
-					if err != nil {
-						return err
-					}
-
-					relativePath = strings.ReplaceAll(relativePath, "\\", "/")
-
-					jsonBytes, err := os.ReadFile(file)
-					if err != nil {
-						return err
-					}
-
-					content := string(jsonBytes)
-
-					taskList.AddTask(ux.TaskOptions{
-						Title: fmt.Sprintf("Generating embeddings for document %s", relativePath),
-						Async: true,
-						Action: func() (ux.TaskState, error) {
-							completionsResponse, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
-								Messages: []azopenai.ChatRequestMessageClassification{
-									&azopenai.ChatRequestSystemMessage{
-										Content: azopenai.NewChatRequestSystemMessageContent("You are helping generate summary embeddings for specified document. Please provide a summary of the document."),
-									},
-									&azopenai.ChatRequestUserMessage{
-										Content: azopenai.NewChatRequestUserMessageContent(content),
-									},
-								},
-								DeploymentName: &aiConfig.Models.ChatCompletion,
-							}, nil)
-							if err != nil {
-								return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
-							}
-
-							embeddingText := *completionsResponse.ChatCompletions.Choices[0].Message.Content
-
-							response, err := openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
-								Input: []string{
-									embeddingText,
-								},
-								DeploymentName: &aiConfig.Models.Embeddings,
-							}, nil)
-
-							if err != nil {
-								return ux.Error, common.NewDetailedError("Failed to generate embeddings", err)
-							}
-
-							contentHash := sha256.Sum256([]byte(relativePath))
-
-							embeddingDoc := EmbeddingDocument{
-								Title:      relativePath,
-								ChunkId:    hex.EncodeToString(contentHash[:]),
-								Chunk:      embeddingText,
-								TextVector: response.Embeddings.Data[0].Embedding,
-							}
-
-							base := filepath.Base(file)
-							outputFileNameBase := strings.TrimSuffix(base, filepath.Ext(base))
-							outputFilePath := filepath.Join(embeddingsOutputPath, fmt.Sprintf("%s.json", outputFileNameBase))
-
-							jsonData, err := json.MarshalIndent(embeddingDoc, "", "  ")
-							if err != nil {
-								return ux.Error, err
-							}
-
-							if err := os.WriteFile(outputFilePath, jsonData, permissions.PermissionFile); err != nil {
-								return ux.Error, common.NewDetailedError("Failed to write embeddings to file", err)
-							}
-
-							return ux.Success, nil
-						},
-					})
-				}
-
-				return taskList.Run()
-			})
+			if err := taskList.Run(); err != nil {
+				return err
+			}
 
 			if err != nil {
 				return err
@@ -245,13 +201,10 @@ func newGenerateCommand() *cobra.Command {
 
 	// Define flags for `generate` command
 	generateCmd.Flags().StringVar(&flags.Source, "source", "", "Path to the local file or directory to upload (required)")
-	generateCmd.Flags().StringVar(&flags.Container, "container", "", "Source container in Blob Storage with documents to embed (required)")
 	generateCmd.Flags().StringVar(&flags.Model, "model", "", "Model name to use for embedding (e.g., 'embedding-ada-002') (required)")
 	generateCmd.Flags().StringVar(&flags.Output, "output", "", "Path or container to save generated embeddings")
-	generateCmd.Flags().IntVar(&flags.BatchSize, "batch-size", 0, "Number of documents to process in each batch")
 	generateCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file types to process (e.g., '.pdf', '.txt')")
-	generateCmd.Flags().BoolVar(&flags.Normalize, "normalize", false, "Normalize text before embedding (e.g., lowercase, remove special characters)")
-	generateCmd.Flags().StringVar(&flags.Language, "language", "", "Specify language if the model supports multilingual text")
+	generateCmd.Flags().BoolVarP(&flags.Force, "force", "f", false, "Generate embeddings without confirmation")
 
 	_ = generateCmd.MarkFlagRequired("source")
 
@@ -277,14 +230,17 @@ func newIngestCommand() *cobra.Command {
 				return err
 			}
 
-			credential, err := azdContext.Credential()
-			if err != nil {
-				return err
+			if flags.Pattern == "" {
+				flags.Pattern = "*"
 			}
 
 			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
 			if err != nil {
 				return err
+			}
+
+			if flags.ServiceName != "" {
+				aiConfig.Search.Service = flags.ServiceName
 			}
 
 			if aiConfig.Search.Service == "" {
@@ -294,6 +250,10 @@ func newIngestCommand() *cobra.Command {
 				}
 
 				aiConfig.Search.Service = *searchService.Name
+			}
+
+			if flags.IndexName != "" {
+				aiConfig.Search.Index = flags.IndexName
 			}
 
 			if aiConfig.Search.Index == "" {
@@ -315,64 +275,65 @@ func newIngestCommand() *cobra.Command {
 			}
 
 			// Combine the current working directory with the relative path
-			absolutePath := filepath.Join(cwd, flags.Source)
-
-			matchingFiles, err := getMatchingFiles(absolutePath, flags.Pattern, true)
+			absSourcePath := filepath.Join(cwd, flags.Source)
+			matchingFiles, err := getMatchingFiles(absSourcePath, flags.Pattern, true)
 			if err != nil {
 				return err
 			}
 
-			err = azdContext.Invoke(func(clientOptions *azcore.ClientOptions) error {
-				endpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
-				documentsClient, err := azsearchindex.NewDocumentsClient(endpoint, aiConfig.Search.Index, credential, clientOptions)
+			fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
+			fmt.Printf("Search Service: %s\n", color.CyanString(aiConfig.Search.Service))
+			fmt.Printf("Search Index: %s\n", color.CyanString(aiConfig.Search.Index))
+
+			if !flags.Force {
+				fmt.Println()
+				fmt.Printf("Found %s matching files with pattern %s.\n", color.CyanString(fmt.Sprint(len(matchingFiles))), color.CyanString(flags.Pattern))
+
+				continueConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+					DefaultValue: ux.Ptr(true),
+					Message:      "Continue to ingesting embeddings?",
+				})
+
+				userConfirmed, err := continueConfirm.Ask()
 				if err != nil {
 					return err
 				}
 
-				taskList := ux.NewTaskList(nil)
+				if !*userConfirmed {
+					return ux.ErrCancelled
+				}
+			}
 
-				for _, file := range matchingFiles {
-					relativePath, err := filepath.Rel(cwd, file)
-					if err != nil {
-						return err
-					}
+			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+			if err != nil {
+				return err
+			}
 
-					relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+			taskList := ux.NewTaskList(nil)
 
-					taskList.AddTask(ux.TaskOptions{
-						Title: fmt.Sprintf("Ingesting embeddings for document %s", relativePath),
-						Action: func() (ux.TaskState, error) {
-							jsonBytes, err := os.ReadFile(file)
-							if err != nil {
-								return ux.Error, common.NewDetailedError("Failed to read embeddings from file", err)
-							}
-
-							embeddingDoc := map[string]any{}
-							if err := json.Unmarshal(jsonBytes, &embeddingDoc); err != nil {
-								return ux.Error, common.NewDetailedError("Failed to parse embeddings from file", err)
-							}
-
-							batch := azsearchindex.IndexBatch{
-								Actions: []*azsearchindex.IndexAction{
-									{
-										ActionType:           to.Ptr(azsearchindex.IndexActionTypeMergeOrUpload),
-										AdditionalProperties: embeddingDoc,
-									},
-								},
-							}
-
-							_, err = documentsClient.Index(ctx, batch, nil, nil)
-							if err != nil {
-								return ux.Error, common.NewDetailedError("Failed to ingest embeddings", err)
-							}
-
-							return ux.Success, nil
-						},
-					})
+			for _, file := range matchingFiles {
+				relativePath, err := filepath.Rel(cwd, file)
+				if err != nil {
+					return err
 				}
 
-				return taskList.Run()
-			})
+				relativePath = strings.ReplaceAll(relativePath, "\\", "/")
+
+				taskList.AddTask(ux.TaskOptions{
+					Title: fmt.Sprintf("Ingesting embeddings for document %s", relativePath),
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
+						if err := docPrepService.IngestEmbedding(ctx, file); err != nil {
+							return ux.Error, common.NewDetailedError("Failed to ingest embedding", err)
+						}
+
+						return ux.Success, nil
+					},
+				})
+			}
+
+			if err := taskList.Run(); err != nil {
+				return err
+			}
 
 			if err != nil {
 				return err
@@ -383,11 +344,11 @@ func newIngestCommand() *cobra.Command {
 	}
 
 	// Define flags for `ingest` command
-	ingestCmd.Flags().StringVar(&flags.IndexName, "index-name", "", "Target vector store or index name for ingestion (required)")
+	ingestCmd.Flags().StringVar(&flags.ServiceName, "service-name", "", "Azure Cognitive Search service name")
+	ingestCmd.Flags().StringVar(&flags.IndexName, "index-name", "", "Target vector store or index name for ingestion")
 	ingestCmd.Flags().StringVar(&flags.Source, "source", "", "Source of the embeddings (e.g., directory or container) (required)")
 	ingestCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file types to process (e.g., '.pdf', '.txt')")
-	ingestCmd.Flags().IntVar(&flags.BatchSize, "batch-size", 0, "Batch size for ingestion")
-	ingestCmd.Flags().BoolVar(&flags.Overwrite, "overwrite", false, "Overwrite existing embeddings in the vector store")
+	ingestCmd.Flags().BoolVarP(&flags.Force, "force", "f", false, "Ingest embeddings without confirmation")
 
 	_ = ingestCmd.MarkFlagRequired("source")
 

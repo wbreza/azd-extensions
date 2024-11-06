@@ -55,15 +55,18 @@ type TaskList struct {
 
 type TaskOptions struct {
 	Title  string
-	Action func() (TaskState, error)
+	Action func(SetProgressFunc) (TaskState, error)
 	Async  bool
 }
 
+type SetProgressFunc func(string)
+
 type Task struct {
 	Title     string
-	Action    func() (TaskState, error)
+	Action    func(SetProgressFunc) (TaskState, error)
 	State     TaskState
 	Error     error
+	progress  string
 	startTime *time.Time
 	endTime   *time.Time
 }
@@ -204,11 +207,16 @@ func (t *TaskList) Render(printer Printer) error {
 			}
 		}
 
+		var progressText string
+		if task.progress != "" {
+			progressText = fmt.Sprintf(" (%s)", task.progress)
+		}
+
 		switch task.State {
 		case Pending:
 			printer.Fprintf("%s %s\n", color.HiBlackString(t.config.PendingStyle), task.Title)
 		case Running:
-			printer.Fprintf("%s %s %s\n", color.CyanString(t.config.RunningStyle), task.Title, elapsedText)
+			printer.Fprintf("%s %s%s %s\n", color.CyanString(t.config.RunningStyle), task.Title, progressText, elapsedText)
 		case Warning:
 			printer.Fprintf("%s %s  %s\n", color.YellowString(t.config.WarningStyle), task.Title, elapsedText)
 		case Error:
@@ -234,7 +242,11 @@ func (t *TaskList) runSyncTasks() {
 		task.startTime = Ptr(time.Now())
 		task.State = Running
 
-		state, err := task.Action()
+		setProgress := func(progress string) {
+			task.progress = progress
+		}
+
+		state, err := task.Action(setProgress)
 		if err != nil {
 			t.errorMuxtex.Lock()
 			t.errors = append(t.errors, err)
@@ -262,7 +274,11 @@ func (t *TaskList) addAsyncTask(task *Task) {
 		task.startTime = Ptr(time.Now())
 		task.State = Running
 
-		state, err := task.Action()
+		setProgress := func(progress string) {
+			task.progress = progress
+		}
+
+		state, err := task.Action(setProgress)
 		if err != nil {
 			t.errorMuxtex.Lock()
 			t.errors = append(t.errors, err)

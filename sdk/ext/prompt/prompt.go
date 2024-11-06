@@ -312,7 +312,7 @@ func PromptResourceGroup(ctx context.Context, subscription *azure.Subscription, 
 			err = ux.NewTaskList(nil).
 				AddTask(ux.TaskOptions{
 					Title: taskName,
-					Action: func() (ux.TaskState, error) {
+					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						newResourceGroup, err := resourceService.CreateOrUpdateResourceGroup(ctx, subscription.Id, resourceGroupName, location.Name, nil)
 						if err != nil {
 							return ux.Error, err
@@ -323,6 +323,10 @@ func PromptResourceGroup(ctx context.Context, subscription *azure.Subscription, 
 					},
 				}).
 				Run()
+
+			if err != nil {
+				return nil, err
+			}
 
 			return resourceGroup, nil
 		},
