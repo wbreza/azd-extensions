@@ -59,7 +59,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 
 	selectedResource, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
 		ResourceType:            to.Ptr(azure.ResourceTypeCognitiveServiceAccount),
-		Kinds:                   []string{"OpenAI", "AIService", "CognitiveServices"},
+		Kinds:                   []string{"OpenAI", "AIServices", "CognitiveServices"},
 		ResourceTypeDisplayName: "Azure AI service",
 		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
 			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
@@ -459,10 +459,6 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 		return nil, err
 	}
 
-	if err != nil {
-		return nil, err
-	}
-
 	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armstorage.Account]{
 		SelectorOptions: &prompt.PromptSelectOptions{
 			Message:            "Select a storage account",
@@ -487,7 +483,12 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 			return storageAccounts, nil
 		},
 		DisplayResource: func(resource *armstorage.Account) (string, error) {
-			return *resource.Name, nil
+			resourceId, err := arm.ParseResourceID(*resource.ID)
+			if err != nil {
+				return "", err
+			}
+
+			return fmt.Sprintf("%s (%s)", *resource.Name, resourceId.ResourceGroupName), nil
 		},
 		CreateResource: func(ctx context.Context) (*armstorage.Account, error) {
 			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
