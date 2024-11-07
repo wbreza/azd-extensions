@@ -50,12 +50,12 @@ func (c *canvas) Run() error {
 }
 
 func (c *canvas) Update() error {
+	c.updateLock.Lock()
+	defer c.updateLock.Unlock()
+
 	if c.printer == nil {
 		return nil
 	}
-
-	c.updateLock.Lock()
-	defer c.updateLock.Unlock()
 
 	c.printer.ClearCanvas()
 	return c.render()
@@ -90,4 +90,11 @@ type CanvasPosition struct {
 type CanvasSize struct {
 	Rows int
 	Cols int
+}
+
+func newCanvasSize() *CanvasSize {
+	return &CanvasSize{
+		Rows: 1,
+		Cols: 0,
+	}
 }

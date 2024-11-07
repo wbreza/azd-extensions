@@ -127,12 +127,12 @@ func (t *TaskList) Run() error {
 
 	go func() {
 		for {
-			if t.Completed() {
+			if t.isCompleted() {
 				break
 			}
 
+			t.canvas.Update()
 			time.Sleep(1 * time.Second)
-			t.Update()
 		}
 	}()
 
@@ -140,7 +140,7 @@ func (t *TaskList) Run() error {
 	t.waitGroup.Wait()
 	// Run sync tasks after async tasks are completed
 	t.runSyncTasks()
-	t.Update()
+	t.canvas.Update()
 
 	if len(t.errors) > 0 {
 		return errors.Join(t.errors...)
@@ -167,19 +167,6 @@ func (t *TaskList) AddTask(options TaskOptions) *TaskList {
 	t.allTasks = append(t.allTasks, task)
 
 	return t
-}
-
-// Completed checks if all async tasks are complete.
-func (t *TaskList) Completed() bool {
-	return int(t.completed) == len(t.allTasks)
-}
-
-func (t *TaskList) Update() error {
-	if t.canvas == nil {
-		t.canvas = NewCanvas(t)
-	}
-
-	return t.canvas.Update()
 }
 
 func (t *TaskList) Render(printer Printer) error {
@@ -231,6 +218,11 @@ func (t *TaskList) Render(printer Printer) error {
 	printer.Fprintln()
 
 	return nil
+}
+
+// isCompleted checks if all async tasks are complete.
+func (t *TaskList) isCompleted() bool {
+	return int(t.completed) == len(t.allTasks)
 }
 
 // runSyncTasks executes all synchronous tasks in order after async tasks are completed.

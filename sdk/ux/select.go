@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -374,11 +373,6 @@ func (p *Select) renderMessage2(printer Printer) {
 
 func (p *Select) Render(printer Printer) error {
 	v2 := true
-
-	if slices.Contains(os.Args[1:], "--selectv2") {
-		v2 = true
-	}
-
 	indent := ""
 
 	if v2 {

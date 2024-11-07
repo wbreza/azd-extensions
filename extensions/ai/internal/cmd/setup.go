@@ -204,7 +204,7 @@ func newSetupCommand() *cobra.Command {
 					fmt.Printf("Embeddings Model: %s\n", color.CyanString(aiConfig.Models.Embeddings))
 					fmt.Println()
 					fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
-					fmt.Printf("Embeddings Output:: %s\n", color.CyanString(absOutputPath))
+					fmt.Printf("Embeddings Output: %s\n", color.CyanString(absOutputPath))
 					fmt.Println()
 
 					readyConfirm := ux.NewConfirm(&ux.ConfirmConfig{

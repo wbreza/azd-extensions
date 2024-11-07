@@ -199,16 +199,14 @@ func (p *Prompt) Render(printer Printer) error {
 		printer.Fprintf(color.HiRedString("(Cancelled)"))
 	}
 
-	// We write a new line to ensure anything else written to the terminal is on the next line
-	// Cursor position for user input is handled further below
-	printer.Fprintln()
-
 	if p.complete || p.cancelled {
+		printer.Fprintln()
 		return nil
 	}
 
 	// Validation error
 	if !p.showHelp && p.submitted && p.hasValidationError {
+		printer.Fprintln()
 		printer.Fprintln(color.YellowString(p.validationMessage))
 	}
 
@@ -223,7 +221,7 @@ func (p *Prompt) Render(printer Printer) error {
 		)
 	}
 
-	if !p.complete && p.cursorPosition != nil {
+	if p.cursorPosition != nil {
 		p.canvas.SetCursorPosition(*p.cursorPosition)
 	}
 

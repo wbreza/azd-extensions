@@ -3,6 +3,8 @@ package ux
 import (
 	"fmt"
 	"io"
+	"log"
+	"math"
 	"os"
 	"regexp"
 	"strings"
@@ -40,7 +42,7 @@ func NewPrinter(writer io.Writer) Printer {
 
 		writer:         writer,
 		currentLine:    "",
-		size:           &CanvasSize{},
+		size:           newCanvasSize(),
 		cursorPosition: nil,
 	}
 }
@@ -62,20 +64,50 @@ func (p *printer) Size() CanvasSize {
 }
 
 func (p *printer) CursorPosition() CanvasPosition {
-	return CanvasPosition{
+	cursorPosition := CanvasPosition{
 		Row: p.size.Rows,
 		Col: p.size.Cols,
 	}
+
+	log.Printf("Current cursor position: Row: %d, Col: %d\n", cursorPosition.Row, cursorPosition.Col)
+
+	return cursorPosition
+}
+
+func (p *printer) MoveCursorToEnd() {
+	p.SetCursorPosition(CanvasPosition{
+		Row: p.size.Rows,
+		Col: p.size.Cols,
+	})
 }
 
 func (p *printer) SetCursorPosition(position CanvasPosition) {
-	p.cursorPosition = &position
-	currentPos := p.CursorPosition()
+	// If the cursor is already at the desired position, do nothing
+	if p.cursorPosition != nil && *p.cursorPosition == position {
+		return
+	}
 
-	moveUp := currentPos.Row - position.Row
-	p.MoveCursorUp(moveUp)
+	// If cursorPosition is nil, assume we're already at the bottom-right of the screen
+	if p.cursorPosition == nil {
+		p.cursorPosition = &CanvasPosition{Row: p.size.Rows, Col: p.size.Cols}
+	}
+
+	// Calculate the row and column differences
+	rowDiff := position.Row - p.cursorPosition.Row
+
+	// Move vertically if needed
+	if rowDiff > 0 {
+		p.MoveCursorDown(rowDiff)
+	} else if rowDiff < 0 {
+		p.MoveCursorUp(int(math.Abs(float64(rowDiff))))
+	}
+
+	// Move horizontally if needed
 	p.MoveCursorToStartOfLine()
 	p.MoveCursorRight(position.Col)
+
+	// Update the stored cursor position
+	p.cursorPosition = &position
 }
 
 func (p *printer) Fprintf(format string, a ...any) {
@@ -84,7 +116,6 @@ func (p *printer) Fprintf(format string, a ...any) {
 
 	content := fmt.Sprintf(format, a...)
 	lineCount := strings.Count(content, "\n")
-	p.size.Rows += lineCount
 
 	var lastLine string
 
@@ -97,9 +128,12 @@ func (p *printer) Fprintf(format string, a ...any) {
 		p.currentLine += lastLine
 	}
 
-	p.size.Cols = len(specialTextRegex.ReplaceAllString(p.currentLine, ""))
-
 	fmt.Fprint(p.writer, content)
+
+	p.size.Cols = len(specialTextRegex.ReplaceAllString(p.currentLine, ""))
+	p.size.Rows += lineCount
+
+	log.Print(content)
 }
 
 func (p *printer) Fprintln(a ...any) {
@@ -107,23 +141,26 @@ func (p *printer) Fprintln(a ...any) {
 }
 
 func (p *printer) ClearCanvas() {
+	log.Println("Clearing canvas")
+
 	p.clearLock.Lock()
 	defer p.clearLock.Unlock()
 
-	if p.cursorPosition != nil {
-		moveCount := p.size.Rows - p.cursorPosition.Row
-		p.MoveCursorToStartOfLine()
-		p.MoveCursorDown(moveCount)
-	}
+	// 1. Move cursor to the bottom-right corner of the canvas
+	p.MoveCursorToEnd()
 
-	p.ClearLine()
-
-	for i := 0; i < p.size.Rows; i++ {
-		p.MoveCursorUp(0)
+	// 2. Clear each row from the bottom to the top
+	for row := p.size.Rows; row > 0; row-- {
 		p.ClearLine()
+		if row > 1 { // Avoid moving up if we're on the top row
+			p.MoveCursorUp(1)
+		}
 	}
 
-	p.size = &CanvasSize{}
+	// 3. Reset the canvas size
+	p.size = newCanvasSize()
+
+	// 4. Clear cursor position
 	p.cursorPosition = nil
 }
 

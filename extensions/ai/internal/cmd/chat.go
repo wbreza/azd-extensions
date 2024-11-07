@@ -225,7 +225,7 @@ func newChatCommand() *cobra.Command {
 					}
 				}
 
-				fmt.Printf("%s: %s\n", color.GreenString("User"), color.HiBlackString(userMessage))
+				fmt.Printf("%s: %s\n", color.GreenString("User"), userMessage)
 				fmt.Println()
 
 				if hasVectorSearch {
@@ -358,7 +358,7 @@ func newChatCommand() *cobra.Command {
 					Content: azopenai.NewChatRequestAssistantMessageContent(assistantMessage),
 				})
 
-				fmt.Printf("%s: Completion: %d, Prompt: %d, Total: %d\n", color.YellowString("Usage"), *chatResponse.Usage.CompletionTokens, *chatResponse.Usage.PromptTokens, *chatResponse.Usage.TotalTokens)
+				color.HiBlack("(Usage: Completion: %d, Prompt: %d, Total: %d)\n", *chatResponse.Usage.CompletionTokens, *chatResponse.Usage.PromptTokens, *chatResponse.Usage.TotalTokens)
 				fmt.Println()
 
 				totalTokenCount += ((len(userMessage) / 4) + (len(assistantMessage) / 4))
