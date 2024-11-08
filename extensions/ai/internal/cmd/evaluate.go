@@ -54,7 +54,7 @@ func newEvaluateFlowCommand() *cobra.Command {
 			if flags.Output == "" {
 				currentTime := time.Now()
 				timestamp := currentTime.Format("20060102_150405")
-				filename := fmt.Sprintf("accuracy_report_%s.json", timestamp)
+				filename := fmt.Sprintf("flow_report_%s.json", timestamp)
 				flags.Output = filepath.Join("evaluations", filename)
 			}
 
@@ -131,7 +131,7 @@ func newEvaluateModelCommand() *cobra.Command {
 			if flags.Output == "" {
 				currentTime := time.Now()
 				timestamp := currentTime.Format("20060102_150405")
-				filename := fmt.Sprintf("accuracy_report_%s.json", timestamp)
+				filename := fmt.Sprintf("model_report_%s.json", timestamp)
 				flags.Output = filepath.Join("evaluations", filename)
 			}
 
