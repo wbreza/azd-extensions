@@ -13,6 +13,10 @@ func (e *DetailedError) Error() string {
 	return fmt.Sprintf("%s\n\nDetails:\n%s", e.description, e.err.Error())
 }
 
+func (e *DetailedError) Unwrap() error {
+	return e.err
+}
+
 func (e *DetailedError) Description() string {
 	return e.description
 }

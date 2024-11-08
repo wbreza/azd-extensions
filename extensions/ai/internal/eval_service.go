@@ -3,9 +3,10 @@ package internal
 import (
 	"context"
 	"fmt"
-	"log"
 	"math"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -60,59 +61,174 @@ func NewEvalService(ctx context.Context, azdContext *ext.Context, aiConfig *AiCo
 	}, nil
 }
 
-type EvaluateOptions struct {
-	ChatCompletionModel string
-	EmbeddingModel      string
-}
+func (s *EvalService) EvaluateTestCase(ctx context.Context, testCase *EvaluationTestCase, options EvaluationOptions) (*EvaluationTestCaseResult, error) {
+	if options.FuzzyMatchThreshold == nil {
+		options.FuzzyMatchThreshold = to.Ptr(float32(0.8))
+	}
 
-func (s *EvalService) Evaluate(ctx context.Context, testCase *EvaluationTestCase, options EvaluateOptions) (bool, error) {
+	if options.SimilarityMatchThreshold == nil {
+		options.SimilarityMatchThreshold = to.Ptr(float32(0.8))
+	}
+
 	modelResponse, err := s.queryModel(ctx, testCase, options)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
-	return s.evaluateResponse(ctx, modelResponse, options.EmbeddingModel, testCase)
+	result, err := s.evaluateResponse(ctx, modelResponse, testCase, options)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
 
-func (s *EvalService) queryModel(ctx context.Context, testCase *EvaluationTestCase, options EvaluateOptions) (string, error) {
-	embeddingsResponse, err := s.openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
-		Input:          []string{testCase.Question},
-		DeploymentName: &options.EmbeddingModel,
-	}, nil)
-	if err != nil {
-		return "", err
+func (s *EvalService) GenerateReport(results []*EvaluationTestCaseResult) *EvaluationReport {
+	overallResult := &EvaluationReport{}
+	if len(results) == 0 {
+		return overallResult
 	}
 
-	searchResponse, err := s.searchClient.SearchPost(ctx, azsearchindex.SearchRequest{
-		Select:    to.Ptr("chunk_id, chunk, title"),
-		QueryType: to.Ptr(azsearchindex.QueryTypeSimple),
-		VectorQueries: []azsearchindex.VectorQueryClassification{
-			&azsearchindex.VectorizedQuery{
-				Kind:       to.Ptr(azsearchindex.VectorQueryKindVector),
-				Fields:     to.Ptr("text_vector"),
-				Exhaustive: to.Ptr(true),
-				K:          to.Ptr(int32(3)),
-				Vector:     ConvertToFloatPtrSlice(embeddingsResponse.Data[0].Embedding),
-			},
-		},
-	}, nil, nil)
-	if err != nil {
-		return "", nil
-	}
+	totalCount := len(results)
+	latencies := make([]int, totalCount)
+	tokens := make([]int, totalCount)
 
-	chatMessage := testCase.Question
+	var correctCount int
+	var truePositives int
+	var falsePositives int
+	var falseNegatives int
+	var totalDuration int
+	var totalTokens int
 
-	if len(searchResponse.Results) > 0 {
-		contextResults := make([]string, len(searchResponse.Results))
+	for i, testCaseResult := range results {
+		latencies[i] = testCaseResult.Response.Duration
+		tokens[i] = int(testCaseResult.Response.TokenUsage.TotalTokens)
+		totalDuration += testCaseResult.Response.Duration
+		totalTokens += int(testCaseResult.Response.TokenUsage.TotalTokens)
 
-		for i, result := range searchResponse.Results {
-			contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["chunk"]))
+		if testCaseResult.Correct {
+			correctCount++
+			truePositives++
+		} else {
+			falseNegatives++
 		}
 
-		chatMessage = fmt.Sprintf("Question: \"%s\"\n\nContext:\n%s", testCase.Question, strings.Join(contextResults, "\n\n"))
+		overallResult.Results = append(overallResult.Results, testCaseResult)
 	}
 
-	log.Printf("Chat question & context: %s\n", chatMessage)
+	// Accuracy Metrics
+	if totalCount > 0 {
+		overallResult.Metrics.Accuracy = float32(correctCount) / float32(totalCount)
+	}
+	if truePositives+falsePositives > 0 {
+		overallResult.Metrics.Precision = float32(truePositives) / float32(truePositives+falsePositives)
+	}
+	if truePositives+falseNegatives > 0 {
+		overallResult.Metrics.Recall = float32(truePositives) / float32(truePositives+falseNegatives)
+	}
+	if overallResult.Metrics.Precision+overallResult.Metrics.Recall > 0 {
+		overallResult.Metrics.F1 = 2 * (overallResult.Metrics.Precision * overallResult.Metrics.Recall) /
+			(overallResult.Metrics.Precision + overallResult.Metrics.Recall)
+	}
+
+	// Latency Metrics
+	overallResult.Metrics.Latency.TotalDuration = int64(totalDuration)
+	if totalCount > 0 {
+		overallResult.Metrics.Latency.AvgDuration = float64(totalDuration) / float64(totalCount)
+	}
+
+	sort.Slice(latencies, func(i, j int) bool {
+		return latencies[i] < latencies[j]
+	})
+
+	// Set Min and Max Duration
+	overallResult.Metrics.Latency.MinDuration = latencies[0]
+	overallResult.Metrics.Latency.MaxDuration = latencies[totalCount-1]
+
+	// Calculate Median Latency
+	if totalCount > 0 {
+		if totalCount%2 == 0 {
+			// Even number of latencies: average of two middle values
+			overallResult.Metrics.Latency.MedianLatency = (latencies[totalCount/2-1] + latencies[totalCount/2]) / 2
+		} else {
+			// Odd number of latencies: middle value
+			overallResult.Metrics.Latency.MedianLatency = latencies[totalCount/2]
+		}
+	}
+
+	// Token Usage Metrics
+	overallResult.Metrics.TokenUsage.TotalTokens = int32(totalTokens)
+	if totalCount > 0 {
+		overallResult.Metrics.TokenUsage.AvgTokens = float32(totalTokens) / float32(totalCount)
+	}
+
+	sort.Slice(tokens, func(i, j int) bool {
+		return tokens[i] < tokens[j]
+	})
+
+	// Set Min and Max Tokens
+	overallResult.Metrics.TokenUsage.MinTokens = int32(tokens[0])
+	overallResult.Metrics.TokenUsage.MaxTokens = int32(tokens[totalCount-1])
+
+	// Calculate Median Tokens
+	if totalCount > 0 {
+		if totalCount%2 == 0 {
+			// Even number of tokens: average of two middle values
+			overallResult.Metrics.TokenUsage.MedianTokens = int32((tokens[totalCount/2-1] + tokens[totalCount/2]) / 2)
+		} else {
+			// Odd number of tokens: middle value
+			overallResult.Metrics.TokenUsage.MedianTokens = int32(tokens[totalCount/2])
+		}
+	}
+
+	return overallResult
+}
+
+func (s *EvalService) queryModel(ctx context.Context, testCase *EvaluationTestCase, options EvaluationOptions) (*ModelResponse, error) {
+	startTime := time.Now()
+	tokenUsage := TokenUsage{}
+	chatMessage := testCase.Question
+
+	// Only use embeddings for flow evaluation type
+	if options.EvaluationType == EvaluationTypeFlow {
+		embeddingsResponse, err := s.openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
+			Input:          []string{testCase.Question},
+			DeploymentName: &options.EmbeddingModel,
+		}, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		tokenUsage.PromptTokens += *embeddingsResponse.Usage.PromptTokens
+		tokenUsage.TotalTokens += *embeddingsResponse.Usage.TotalTokens
+
+		searchResponse, err := s.searchClient.SearchPost(ctx, azsearchindex.SearchRequest{
+			Select:    to.Ptr("chunk_id, chunk, title"),
+			QueryType: to.Ptr(azsearchindex.QueryTypeSimple),
+			VectorQueries: []azsearchindex.VectorQueryClassification{
+				&azsearchindex.VectorizedQuery{
+					Kind:       to.Ptr(azsearchindex.VectorQueryKindVector),
+					Fields:     to.Ptr("text_vector"),
+					Exhaustive: to.Ptr(true),
+					K:          to.Ptr(int32(3)),
+					Vector:     ConvertToFloatPtrSlice(embeddingsResponse.Data[0].Embedding),
+				},
+			},
+		}, nil, nil)
+		if err != nil {
+			return nil, nil
+		}
+
+		if len(searchResponse.Results) > 0 {
+			contextResults := make([]string, len(searchResponse.Results))
+
+			for i, result := range searchResponse.Results {
+				contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["chunk"]))
+			}
+
+			chatMessage = fmt.Sprintf("Question: \"%s\"\n\nContext:\n%s", testCase.Question, strings.Join(contextResults, "\n\n"))
+		}
+	}
 
 	chatMessages := []azopenai.ChatRequestMessageClassification{
 		&azopenai.ChatRequestSystemMessage{
@@ -123,60 +239,120 @@ func (s *EvalService) queryModel(ctx context.Context, testCase *EvaluationTestCa
 		},
 	}
 
-	response, err := s.openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
+	chatResponse, err := s.openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
 		DeploymentName: &options.ChatCompletionModel,
 		Messages:       chatMessages,
 	}, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	chatResponse := *response.ChatCompletions.Choices[0].Message.Content
-	log.Printf("Chat response: %s\n", chatResponse)
+	tokenUsage.PromptTokens += *chatResponse.Usage.PromptTokens
+	tokenUsage.CompletionTokens += *chatResponse.Usage.CompletionTokens
+	tokenUsage.TotalTokens += *chatResponse.Usage.TotalTokens
 
-	return chatResponse, nil
+	return &ModelResponse{
+		Message:    *chatResponse.ChatCompletions.Choices[0].Message.Content,
+		Duration:   int(time.Since(startTime).Milliseconds()),
+		TokenUsage: tokenUsage,
+	}, nil
 }
 
 // Function to evaluate if model response is correct based on expected answers
-func (s *EvalService) evaluateResponse(ctx context.Context, responseText string, deploymentName string, testCase *EvaluationTestCase) (bool, error) {
+func (s *EvalService) evaluateResponse(ctx context.Context, response *ModelResponse, testCase *EvaluationTestCase, options EvaluationOptions) (*EvaluationTestCaseResult, error) {
+	result := &EvaluationTestCaseResult{
+		Id:            testCase.Id,
+		Question:      testCase.Question,
+		Response:      response,
+		AnswerResults: []*EvaluationTestCaseAnswerResult{},
+	}
+
+	var isCorrect bool
+
 	// Step 1: Exact match
 	for _, answer := range testCase.ExpectedAnswers {
-		if normalizeText(responseText) == normalizeText(answer) {
-			return true, nil
+		isCorrect = normalizeText(response.Message) == normalizeText(answer)
+		score := 0
+		if isCorrect {
+			score = 1
+		}
+
+		answerResult := &EvaluationTestCaseAnswerResult{
+			Expected:  answer,
+			Correct:   isCorrect,
+			MatchType: "Exact",
+			Score:     float32(score),
+		}
+
+		result.AnswerResults = append(result.AnswerResults, answerResult)
+		if isCorrect {
+			result.Correct = true
+			return result, nil
 		}
 	}
 
 	// Step 2: Partial match
 	for _, answer := range testCase.ExpectedAnswers {
-		if strings.Contains(normalizeText(responseText), normalizeText(answer)) {
-			return true, nil
+		isCorrect = strings.Contains(normalizeText(response.Message), normalizeText(answer))
+		score := 0
+		if isCorrect {
+			score = 1
+		}
+
+		answerResult := &EvaluationTestCaseAnswerResult{
+			Expected:  answer,
+			Correct:   isCorrect,
+			MatchType: "Partial",
+			Score:     float32(score),
+		}
+
+		result.AnswerResults = append(result.AnswerResults, answerResult)
+		if isCorrect {
+			result.Correct = true
+			return result, nil
 		}
 	}
 
 	// Step 3: Fuzzy matching using Levenshtein distance
-	const fuzzyMatchThreshold = 0.8 // Threshold for fuzzy match similarity (0-1)
 	for _, answer := range testCase.ExpectedAnswers {
-		similarity := calculateFuzzySimilarity(responseText, answer)
-		log.Printf("Fuzzy similarity: %f\n", similarity)
-		if similarity >= fuzzyMatchThreshold {
-			return true, nil
+		similarity := calculateFuzzySimilarity(response.Message, answer)
+		isCorrect = similarity >= float64(*options.FuzzyMatchThreshold)
+		answerResult := &EvaluationTestCaseAnswerResult{
+			Expected:  answer,
+			Correct:   isCorrect,
+			MatchType: "Fuzzy",
+			Score:     float32(similarity),
+		}
+
+		result.AnswerResults = append(result.AnswerResults, answerResult)
+		if isCorrect {
+			result.Correct = true
+			return result, nil
 		}
 	}
 
 	// Step 4: Semantic similarity using embeddings
-	const similarityThreshold = 0.8 // Set a threshold for cosine similarity (0-1)
 	for _, answer := range testCase.ExpectedAnswers {
-		similarity, err := s.calculateCosineSimilarity(ctx, deploymentName, responseText, answer)
+		similarity, err := s.calculateCosineSimilarity(ctx, options.EmbeddingModel, response.Message, answer)
 		if err != nil {
-			return false, err
+			return nil, err
 		}
-		log.Printf("Cosine similarity: %f\n", similarity)
-		if similarity >= similarityThreshold {
-			return true, nil
+		isCorrect = similarity >= *options.SimilarityMatchThreshold
+		answerResult := &EvaluationTestCaseAnswerResult{
+			Expected:  answer,
+			Correct:   isCorrect,
+			MatchType: "Semantic",
+			Score:     similarity,
+		}
+
+		result.AnswerResults = append(result.AnswerResults, answerResult)
+		if isCorrect {
+			result.Correct = true
+			return result, nil
 		}
 	}
 
-	return false, nil
+	return result, nil
 }
 
 // calculateCosineSimilarity generates embeddings for both strings
