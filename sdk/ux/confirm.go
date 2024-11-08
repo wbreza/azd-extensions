@@ -48,7 +48,7 @@ type Confirm struct {
 	submitted          bool
 	displayValue       string
 	cancelled          bool
-	cursorPosition     *CanvasPosition
+	cursorPosition     *CursorPosition
 }
 
 func NewConfirm(config *ConfirmConfig) *Confirm {
@@ -190,7 +190,7 @@ func (p *Confirm) Render(printer Printer) error {
 	}
 
 	printer.Fprintf(valueOutput)
-	p.cursorPosition = Ptr(p.canvas.CursorPosition())
+	p.cursorPosition = Ptr(printer.CursorPosition())
 
 	printer.Fprintln()
 
@@ -215,7 +215,7 @@ func (p *Confirm) Render(printer Printer) error {
 	}
 
 	if p.cursorPosition != nil {
-		p.canvas.SetCursorPosition(*p.cursorPosition)
+		printer.SetCursorPosition(*p.cursorPosition)
 	}
 
 	return nil

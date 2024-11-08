@@ -26,8 +26,8 @@ type Printer interface {
 
 	ClearCanvas()
 
-	CursorPosition() CanvasPosition
-	SetCursorPosition(position CanvasPosition)
+	CursorPosition() CursorPosition
+	SetCursorPosition(position CursorPosition)
 	Size() CanvasSize
 }
 
@@ -54,7 +54,7 @@ type printer struct {
 	writer         io.Writer
 	currentLine    string
 	size           *CanvasSize
-	cursorPosition *CanvasPosition
+	cursorPosition *CursorPosition
 	clearLock      sync.Mutex
 	writeLock      sync.Mutex
 }
@@ -63,8 +63,8 @@ func (p *printer) Size() CanvasSize {
 	return *p.size
 }
 
-func (p *printer) CursorPosition() CanvasPosition {
-	cursorPosition := CanvasPosition{
+func (p *printer) CursorPosition() CursorPosition {
+	cursorPosition := CursorPosition{
 		Row: p.size.Rows,
 		Col: p.size.Cols,
 	}
@@ -75,13 +75,13 @@ func (p *printer) CursorPosition() CanvasPosition {
 }
 
 func (p *printer) MoveCursorToEnd() {
-	p.SetCursorPosition(CanvasPosition{
+	p.SetCursorPosition(CursorPosition{
 		Row: p.size.Rows,
 		Col: p.size.Cols,
 	})
 }
 
-func (p *printer) SetCursorPosition(position CanvasPosition) {
+func (p *printer) SetCursorPosition(position CursorPosition) {
 	// If the cursor is already at the desired position, do nothing
 	if p.cursorPosition != nil && *p.cursorPosition == position {
 		return
@@ -89,7 +89,7 @@ func (p *printer) SetCursorPosition(position CanvasPosition) {
 
 	// If cursorPosition is nil, assume we're already at the bottom-right of the screen
 	if p.cursorPosition == nil {
-		p.cursorPosition = &CanvasPosition{Row: p.size.Rows, Col: p.size.Cols}
+		p.cursorPosition = &CursorPosition{Row: p.size.Rows, Col: p.size.Cols}
 	}
 
 	// Calculate the row and column differences

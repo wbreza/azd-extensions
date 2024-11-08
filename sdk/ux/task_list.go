@@ -170,9 +170,30 @@ func (t *TaskList) AddTask(options TaskOptions) *TaskList {
 }
 
 func (t *TaskList) Render(printer Printer) error {
+	otherTasks := []*Task{}
+	runningTasks := []*Task{}
+	pendingTasks := []*Task{}
+
+	// Sort tasks for proper rendering order
+	for _, task := range t.allTasks {
+		switch task.State {
+		case Running:
+			runningTasks = append(runningTasks, task)
+		case Pending:
+			pendingTasks = append(pendingTasks, task)
+		default:
+			otherTasks = append(otherTasks, task)
+		}
+	}
+
+	renderTasks := []*Task{}
+	renderTasks = append(renderTasks, otherTasks...)
+	renderTasks = append(renderTasks, runningTasks...)
+	renderTasks = append(renderTasks, pendingTasks...)
+
 	printer.Fprintln()
 
-	for _, task := range t.allTasks {
+	for _, task := range renderTasks {
 		endTime := time.Now()
 		if task.endTime != nil {
 			endTime = *task.endTime
@@ -205,7 +226,7 @@ func (t *TaskList) Render(printer Printer) error {
 		case Running:
 			printer.Fprintf("%s %s%s %s\n", color.CyanString(t.config.RunningStyle), task.Title, progressText, elapsedText)
 		case Warning:
-			printer.Fprintf("%s %s  %s\n", color.YellowString(t.config.WarningStyle), task.Title, elapsedText)
+			printer.Fprintf("%s %s %s %s\n", color.YellowString(t.config.WarningStyle), task.Title, elapsedText, color.RedString("(%s)", errorDescription))
 		case Error:
 			printer.Fprintf("%s %s %s %s\n", color.RedString(t.config.ErrorStyle), task.Title, elapsedText, color.RedString("(%s)", errorDescription))
 		case Success:

@@ -23,6 +23,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.AddCommand(newDocumentCommand())
 	rootCmd.AddCommand(newEmbeddingCommand())
 	rootCmd.AddCommand(newIndexCommand())
+	rootCmd.AddCommand(newEvaluateCommand())
 
 	rootCmd.PersistentFlags().Bool("debug", false, "Enable debug mode")
 

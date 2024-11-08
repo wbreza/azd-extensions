@@ -61,7 +61,7 @@ type Select struct {
 	hasValidationError bool
 	validationMessage  string
 	cancelled          bool
-	cursorPosition     *CanvasPosition
+	cursorPosition     *CursorPosition
 }
 
 type selectOption struct {
@@ -314,7 +314,7 @@ func (p *Select) renderMessage1(printer Printer) {
 		printer.Fprintf(p.filter)
 	}
 
-	p.cursorPosition = Ptr(p.canvas.CursorPosition())
+	p.cursorPosition = Ptr(printer.CursorPosition())
 
 	// Cancelled
 	if p.cancelled {
@@ -359,11 +359,11 @@ func (p *Select) renderMessage2(printer Printer) {
 		printer.Fprintf("  Filter: ")
 
 		if p.filter == "" {
-			p.cursorPosition = Ptr(p.canvas.CursorPosition())
+			p.cursorPosition = Ptr(printer.CursorPosition())
 			printer.Fprintf(color.HiBlackString("Type to filter list"))
 		} else {
 			printer.Fprintf(p.filter)
-			p.cursorPosition = Ptr(p.canvas.CursorPosition())
+			p.cursorPosition = Ptr(printer.CursorPosition())
 		}
 
 		printer.Fprintln()
@@ -395,7 +395,7 @@ func (p *Select) Render(printer Printer) error {
 	}
 
 	if p.cursorPosition != nil {
-		p.canvas.SetCursorPosition(*p.cursorPosition)
+		printer.SetCursorPosition(*p.cursorPosition)
 	}
 
 	return nil

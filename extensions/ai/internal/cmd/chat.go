@@ -146,18 +146,12 @@ func newChatCommand() *cobra.Command {
 
 			loadingSpinner.Start(ctx)
 
-			accountClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
+			account, err := internal.PromptAIServiceAccount(ctx, azdContext, aiConfig)
 			if err != nil {
 				return err
 			}
 
-			account, err := accountClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
-			if err != nil {
-				return err
-			}
-
-			aiEndpoint := *account.Properties.Endpoint
-			openAiClient, err := azopenai.NewClient(aiEndpoint, credential, &azopenai.ClientOptions{ClientOptions: *azClientOptions})
+			openAiClient, err := azopenai.NewClient(*account.Properties.Endpoint, credential, &azopenai.ClientOptions{ClientOptions: *azClientOptions})
 			if err != nil {
 				return err
 			}
@@ -252,7 +246,7 @@ func newChatCommand() *cobra.Command {
 								Fields:     to.Ptr("text_vector"),
 								Exhaustive: to.Ptr(true),
 								K:          to.Ptr(int32(3)),
-								Vector:     convertToFloatPtrSlice(embeddingsResponse.Data[0].Embedding),
+								Vector:     internal.ConvertToFloatPtrSlice(embeddingsResponse.Data[0].Embedding),
 							},
 						},
 					}, nil, nil)
@@ -381,15 +375,6 @@ func newChatCommand() *cobra.Command {
 
 func getDateTime() string {
 	return time.Now().Format(time.RFC1123)
-}
-
-func convertToFloatPtrSlice(input []float32) []*float32 {
-	result := make([]*float32, len(input))
-	for i := range input {
-		result[i] = &input[i]
-	}
-
-	return result
 }
 
 func summarizeMessages(ctx context.Context, openAiClient *azopenai.Client, messages []azopenai.ChatRequestMessageClassification, aiConfig *internal.AiConfig) (string, error) {

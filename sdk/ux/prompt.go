@@ -66,7 +66,7 @@ type Prompt struct {
 	submitted          bool
 	validationMessage  string
 	cancelled          bool
-	cursorPosition     *CanvasPosition
+	cursorPosition     *CursorPosition
 }
 
 func NewPrompt(config *PromptConfig) *Prompt {
@@ -179,7 +179,7 @@ func (p *Prompt) Render(printer Printer) error {
 
 	// Placeholder
 	if !p.cancelled && p.value == "" && p.config.PlaceHolder != "" {
-		p.cursorPosition = Ptr(p.canvas.CursorPosition())
+		p.cursorPosition = Ptr(printer.CursorPosition())
 		printer.Fprintf(color.HiBlackString(p.config.PlaceHolder))
 	}
 
@@ -192,13 +192,15 @@ func (p *Prompt) Render(printer Printer) error {
 		}
 
 		printer.Fprintf(valueOutput)
-		p.cursorPosition = Ptr(p.canvas.CursorPosition())
+		p.cursorPosition = Ptr(printer.CursorPosition())
 	}
 
+	// Cancelled
 	if p.cancelled {
 		printer.Fprintf(color.HiRedString("(Cancelled)"))
 	}
 
+	// Done
 	if p.complete || p.cancelled {
 		printer.Fprintln()
 		return nil
@@ -222,7 +224,7 @@ func (p *Prompt) Render(printer Printer) error {
 	}
 
 	if p.cursorPosition != nil {
-		p.canvas.SetCursorPosition(*p.cursorPosition)
+		printer.SetCursorPosition(*p.cursorPosition)
 	}
 
 	return nil

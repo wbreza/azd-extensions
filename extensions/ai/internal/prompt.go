@@ -57,6 +57,16 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 
 	var aiService *armcognitiveservices.Account
 
+	if aiConfig.Service != "" {
+		existingAccount, err := accountsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		aiService = &existingAccount.Account
+		return aiService, nil
+	}
+
 	selectedResource, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
 		ResourceType:            to.Ptr(azure.ResourceTypeCognitiveServiceAccount),
 		Kinds:                   []string{"OpenAI", "AIServices", "CognitiveServices"},
@@ -256,7 +266,7 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 			return deploymentList, nil
 		},
 		DisplayResource: func(resource *armcognitiveservices.Deployment) (string, error) {
-			return fmt.Sprintf("%s (Model: %s, Version: %s)", *resource.Name, *resource.Properties.Model.Name, *resource.Properties.Model.Version), nil
+			return fmt.Sprintf("%s %s", *resource.Name, color.HiBlackString("(Model: %s, Version: %s)", *resource.Properties.Model.Name, *resource.Properties.Model.Version)), nil
 		},
 		CreateResource: func(ctx context.Context) (*armcognitiveservices.Deployment, error) {
 			selectedModel, err := PromptModel(ctx, azdContext, aiConfig, &PromptModelOptions{
@@ -411,7 +421,7 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 			return models, nil
 		},
 		DisplayResource: func(model *armcognitiveservices.Model) (string, error) {
-			return fmt.Sprintf("%s (Version: %s)", *model.Model.Name, *model.Model.Version), nil
+			return fmt.Sprintf("%s %s", *model.Model.Name, color.HiBlackString("(Version: %s)", *model.Model.Version)), nil
 		},
 	})
 }
@@ -488,7 +498,7 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 				return "", err
 			}
 
-			return fmt.Sprintf("%s (%s)", *resource.Name, resourceId.ResourceGroupName), nil
+			return fmt.Sprintf("%s %s", *resource.Name, color.HiBlackString("(%s)", resourceId.ResourceGroupName)), nil
 		},
 		CreateResource: func(ctx context.Context) (*armstorage.Account, error) {
 			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)

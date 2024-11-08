@@ -18,8 +18,6 @@ type Canvas interface {
 	Run() error
 	Update() error
 	WithWriter(writer io.Writer) Canvas
-	CursorPosition() CanvasPosition
-	SetCursorPosition(position CanvasPosition)
 }
 
 func NewCanvas(visuals ...Visual) Canvas {
@@ -29,14 +27,6 @@ func NewCanvas(visuals ...Visual) Canvas {
 	}
 
 	return canvas
-}
-
-func (c *canvas) CursorPosition() CanvasPosition {
-	return c.printer.CursorPosition()
-}
-
-func (c *canvas) SetCursorPosition(position CanvasPosition) {
-	c.printer.SetCursorPosition(position)
 }
 
 func (c *canvas) WithWriter(writer io.Writer) Canvas {
@@ -82,7 +72,7 @@ func (c *canvas) renderVisual(visual Visual) error {
 	return nil
 }
 
-type CanvasPosition struct {
+type CursorPosition struct {
 	Row int
 	Col int
 }

@@ -154,7 +154,7 @@ func PromptSubscription(ctx context.Context, selectorOptions *PromptSelectOption
 			return subscriptions, nil
 		},
 		DisplayResource: func(subscription *azure.Subscription) (string, error) {
-			return fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id), nil
+			return fmt.Sprintf("%s %s", subscription.Name, color.HiBlackString("(%s)", subscription.Id)), nil
 		},
 		Selected: func(subscription *azure.Subscription) bool {
 			return strings.EqualFold(subscription.Id, defaultSubscriptionId)
@@ -224,7 +224,7 @@ func PromptLocation(ctx context.Context, subscription *azure.Subscription, selec
 			return locations, nil
 		},
 		DisplayResource: func(location *azure.Location) (string, error) {
-			return fmt.Sprintf("%s (%s)", location.RegionalDisplayName, location.Name), nil
+			return fmt.Sprintf("%s %s", location.RegionalDisplayName, color.HiBlackString("(%s)", location.Name)), nil
 		},
 		Selected: func(resource *azure.Location) bool {
 			return resource.Name == defaultLocation
@@ -288,7 +288,7 @@ func PromptResourceGroup(ctx context.Context, subscription *azure.Subscription, 
 			return resourceGroups, nil
 		},
 		DisplayResource: func(resourceGroup *azure.ResourceGroup) (string, error) {
-			return fmt.Sprintf("%s (Location: %s)", resourceGroup.Name, resourceGroup.Location), nil
+			return fmt.Sprintf("%s %s", resourceGroup.Name, color.HiBlackString("(Location: %s)", resourceGroup.Location)), nil
 		},
 		CreateResource: func(ctx context.Context) (*azure.ResourceGroup, error) {
 			namePrompt := ux.NewPrompt(&ux.PromptConfig{
@@ -414,7 +414,7 @@ func PromptSubscriptionResource(ctx context.Context, subscription *azure.Subscri
 				return "", fmt.Errorf("parsing resource id: %w", err)
 			}
 
-			return fmt.Sprintf("%s (%s)", parsedResource.Name, parsedResource.ResourceGroupName), nil
+			return fmt.Sprintf("%s %s", parsedResource.Name, color.HiBlackString("(%s)", parsedResource.ResourceGroupName)), nil
 		},
 		CreateResource: options.CreateResource,
 	})

@@ -13,9 +13,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/ai/azopenai"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/wbreza/azd-extensions/sdk/azure/storage"
 	"github.com/wbreza/azd-extensions/sdk/common/permissions"
@@ -34,7 +32,6 @@ type DocumentPrepService struct {
 }
 
 func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*DocumentPrepService, error) {
-	var armClientOptions *arm.ClientOptions
 	var azClientOptions *azcore.ClientOptions
 
 	cwd, err := os.Getwd()
@@ -42,8 +39,7 @@ func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, aiConf
 		return nil, err
 	}
 
-	err = azdContext.Invoke(func(armOptions *arm.ClientOptions, azcoreOptions *azcore.ClientOptions) {
-		armClientOptions = armOptions
+	err = azdContext.Invoke(func(azcoreOptions *azcore.ClientOptions) {
 		azClientOptions = azcoreOptions
 	})
 	if err != nil {
@@ -55,12 +51,7 @@ func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, aiConf
 		return nil, err
 	}
 
-	accountClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
-	if err != nil {
-		return nil, err
-	}
-
-	account, err := accountClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+	account, err := PromptAIServiceAccount(ctx, azdContext, aiConfig)
 	if err != nil {
 		return nil, err
 	}
