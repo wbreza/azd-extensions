@@ -26,11 +26,11 @@ func newSetupCommand() *cobra.Command {
 	// Main `document` command
 	setupCmd := &cobra.Command{
 		Use:   "setup",
-		Short: "Initialize Azure AI resources and preps documents",
+		Short: "Configure your AI project and preps documents.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			header := output.CommandHeader{
 				Title:       "Initializes AI project (azd ai setup)",
-				Description: "Initialize Azure AI resources and preps documents.",
+				Description: "Configure your AI project and preps documents.",
 			}
 			header.Print()
 
