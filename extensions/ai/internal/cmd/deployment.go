@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/ext"
-	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
 
@@ -31,9 +30,28 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
+			}
+
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+
+				if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
+					return err
+				}
 			}
 
 			credential, err := azdContext.Credential()
@@ -49,12 +67,12 @@ func newDeploymentCommand() *cobra.Command {
 
 			deployments := []*armcognitiveservices.Deployment{}
 
-			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, armClientOptions)
+			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(extensionConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
 
-			deploymentsPager := deploymentsClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Service, nil)
+			deploymentsPager := deploymentsClient.NewListPager(extensionConfig.ResourceGroup, extensionConfig.Ai.Service, nil)
 			for deploymentsPager.More() {
 				pageResponse, err := deploymentsPager.NextPage(ctx)
 				if err != nil {
@@ -87,13 +105,28 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
 			}
 
-			modelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
-				SelectorOptions: &prompt.PromptSelectOptions{
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, nil)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+			}
+
+			modelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
+				SelectorOptions: &ext.SelectOptions{
 					ForceNewResource: to.Ptr(true),
 				},
 			})
@@ -101,8 +134,8 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig.Models.ChatCompletion = *modelDeployment.Name
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			extensionConfig.Ai.Models.ChatCompletion = *modelDeployment.Name
+			if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 				return err
 			}
 
@@ -130,9 +163,24 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
+			}
+
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
 			}
 
 			credential, err := azdContext.Credential()
@@ -146,7 +194,7 @@ func newDeploymentCommand() *cobra.Command {
 				return nil
 			})
 
-			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, armClientOptions)
+			clientFactory, err := armcognitiveservices.NewClientFactory(extensionConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
@@ -157,9 +205,9 @@ func newDeploymentCommand() *cobra.Command {
 				selectedDeployment, err := internal.PromptModelDeployment(
 					ctx,
 					azdContext,
-					aiConfig,
+					azureContext,
 					&internal.PromptModelDeploymentOptions{
-						SelectorOptions: &prompt.PromptSelectOptions{
+						SelectorOptions: &ext.SelectOptions{
 							AllowNewResource: to.Ptr(false),
 						},
 					})
@@ -170,7 +218,7 @@ func newDeploymentCommand() *cobra.Command {
 				deleteFlags.name = *selectedDeployment.Name
 			}
 
-			_, err = deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deleteFlags.name, nil)
+			_, err = deploymentsClient.Get(ctx, extensionConfig.ResourceGroup, extensionConfig.Ai.Service, deleteFlags.name, nil)
 			if err != nil {
 				return fmt.Errorf("deployment '%s' not found", deleteFlags.name)
 			}
@@ -199,7 +247,7 @@ func newDeploymentCommand() *cobra.Command {
 							return ux.Skipped, ux.ErrCancelled
 						}
 
-						poller, err := deploymentsClient.BeginDelete(ctx, aiConfig.ResourceGroup, aiConfig.Service, deleteFlags.name, nil)
+						poller, err := deploymentsClient.BeginDelete(ctx, extensionConfig.ResourceGroup, extensionConfig.Ai.Service, deleteFlags.name, nil)
 						if err != nil {
 							return ux.Error, err
 						}
@@ -242,22 +290,37 @@ func newDeploymentCommand() *cobra.Command {
 				return err
 			}
 
-			// Load AI config
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
 			}
 
-			// Select model deployment
-			if selectFlags.deploymentName == "" {
-				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, nil)
+			// Load AI config
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Models.ChatCompletion = *selectedDeployment.Name
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+			}
+
+			// Select model deployment
+			if selectFlags.deploymentName == "" {
+				selectedDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, nil)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig.Ai.Models.ChatCompletion = *selectedDeployment.Name
 			} else {
-				aiConfig.Models.ChatCompletion = selectFlags.deploymentName
+				extensionConfig.Ai.Models.ChatCompletion = selectFlags.deploymentName
 			}
 
 			// Update AI Config
@@ -265,7 +328,7 @@ func newDeploymentCommand() *cobra.Command {
 				AddTask(ux.TaskOptions{
 					Title: "Save AI configuration",
 					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-						if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+						if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 							return ux.Error, err
 						}
 

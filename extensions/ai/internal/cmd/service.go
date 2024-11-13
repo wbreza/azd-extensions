@@ -35,10 +35,15 @@ func newServiceCommand() *cobra.Command {
 				return err
 			}
 
-			var aiConfig *internal.AiConfig
+			azureContext, err := azdContext.AzureContext(ctx)
+			if err != nil {
+				return err
+			}
+
+			var aiConfig *internal.ExtensionConfig
 
 			if setFlags.subscription == "" || setFlags.resourceGroup == "" || setFlags.serviceName == "" {
-				selectedAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, nil)
+				selectedAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
@@ -48,20 +53,25 @@ func newServiceCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig = &internal.AiConfig{
+				aiConfig = &internal.ExtensionConfig{
 					Subscription:  parsedResource.SubscriptionID,
 					ResourceGroup: parsedResource.ResourceGroupName,
-					Service:       parsedResource.Name,
+					Ai: internal.AiConfig{
+						Service:  *selectedAccount.Name,
+						Endpoint: *selectedAccount.Properties.Endpoint,
+					},
 				}
 			} else {
-				aiConfig = &internal.AiConfig{
+				aiConfig = &internal.ExtensionConfig{
 					Subscription:  setFlags.subscription,
 					ResourceGroup: setFlags.resourceGroup,
-					Service:       setFlags.serviceName,
+					Ai: internal.AiConfig{
+						Service: setFlags.serviceName,
+					},
 				}
 			}
 
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveExtensionConfig(ctx, azdContext, aiConfig); err != nil {
 				return err
 			}
 
@@ -84,12 +94,12 @@ func newServiceCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadAiConfig(ctx, azdContext)
+			aiConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
 			if err != nil {
 				return err
 			}
 
-			fmt.Printf("Service: %s\n", aiConfig.Service)
+			fmt.Printf("Service: %s\n", aiConfig.Ai.Service)
 			fmt.Printf("Resource Group: %s\n", aiConfig.ResourceGroup)
 			fmt.Printf("Subscription ID: %s\n", aiConfig.Subscription)
 

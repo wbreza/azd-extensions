@@ -23,7 +23,7 @@ import (
 
 type DocumentPrepService struct {
 	azdContext *ext.Context
-	aiConfig   *AiConfig
+	aiConfig   *ExtensionConfig
 
 	cwd            string
 	openAiClient   *azopenai.Client
@@ -31,7 +31,7 @@ type DocumentPrepService struct {
 	blobClient     storage.BlobClient
 }
 
-func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*DocumentPrepService, error) {
+func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, extensionConfig *ExtensionConfig) (*DocumentPrepService, error) {
 	var azClientOptions *azcore.ClientOptions
 
 	cwd, err := os.Getwd()
@@ -51,26 +51,19 @@ func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, aiConf
 		return nil, err
 	}
 
-	account, err := PromptAIServiceAccount(ctx, azdContext, aiConfig)
-	if err != nil {
-		return nil, err
-	}
-
-	openAiClient, err := azopenai.NewClient(*account.Properties.Endpoint, credential, &azopenai.ClientOptions{
+	openAiClient, err := azopenai.NewClient(extensionConfig.Ai.Endpoint, credential, &azopenai.ClientOptions{
 		ClientOptions: *azClientOptions,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
-	documentClient, err := azsearchindex.NewDocumentsClient(searchEndpoint, aiConfig.Search.Index, credential, azClientOptions)
+	documentClient, err := azsearchindex.NewDocumentsClient(extensionConfig.Search.Endpoint, extensionConfig.Search.Index, credential, azClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	blobEndpoint := fmt.Sprintf("https://%s.blob.core.windows.net", aiConfig.Storage.Account)
-	azBlobClient, err := azblob.NewClient(blobEndpoint, credential, &azblob.ClientOptions{
+	azBlobClient, err := azblob.NewClient(extensionConfig.Storage.Endpoint, credential, &azblob.ClientOptions{
 		ClientOptions: *azClientOptions,
 	})
 	if err != nil {
@@ -78,15 +71,16 @@ func NewDocumentPrepService(ctx context.Context, azdContext *ext.Context, aiConf
 	}
 
 	storageConfig := storage.AccountConfig{
-		AccountName:   aiConfig.Storage.Account,
-		ContainerName: aiConfig.Storage.Container,
+		AccountName:   extensionConfig.Storage.Account,
+		ContainerName: extensionConfig.Storage.Container,
+		Endpoint:      extensionConfig.Storage.Endpoint,
 	}
 	blobClient := storage.NewBlobClient(&storageConfig, azBlobClient)
 
 	return &DocumentPrepService{
 		cwd:            cwd,
 		azdContext:     azdContext,
-		aiConfig:       aiConfig,
+		aiConfig:       extensionConfig,
 		openAiClient:   openAiClient,
 		documentClient: documentClient,
 		blobClient:     blobClient,
@@ -126,7 +120,7 @@ func (d *DocumentPrepService) GenerateEmbedding(ctx context.Context, sourcePath 
 				Content: azopenai.NewChatRequestUserMessageContent(content),
 			},
 		},
-		DeploymentName: &d.aiConfig.Models.ChatCompletion,
+		DeploymentName: &d.aiConfig.Ai.Models.ChatCompletion,
 	}, nil)
 	if err != nil {
 		return "", err
@@ -138,7 +132,7 @@ func (d *DocumentPrepService) GenerateEmbedding(ctx context.Context, sourcePath 
 		Input: []string{
 			embeddingText,
 		},
-		DeploymentName: &d.aiConfig.Models.Embeddings,
+		DeploymentName: &d.aiConfig.Ai.Models.Embeddings,
 	}, nil)
 
 	if err != nil {

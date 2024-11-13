@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
@@ -31,12 +33,14 @@ var (
 var current *Context
 
 type Context struct {
-	container   *ioc.NestedContainer
-	project     *project.ProjectConfig
-	environment *environment.Environment
-	userConfig  config.UserConfig
-	credential  azcore.TokenCredential
-	principal   *account.Principal
+	container    *ioc.NestedContainer
+	project      *project.ProjectConfig
+	environment  *environment.Environment
+	userConfig   config.UserConfig
+	credential   azcore.TokenCredential
+	principal    *account.Principal
+	deployment   *azure.ResourceDeployment
+	azureContext *AzureContext
 }
 
 func CurrentContext(ctx context.Context) (*Context, error) {
@@ -130,6 +134,77 @@ func (c *Context) Principal(ctx context.Context) (*account.Principal, error) {
 	return c.principal, nil
 }
 
+func (c *Context) Deployment(ctx context.Context) (*azure.ResourceDeployment, error) {
+	if c.deployment == nil {
+		err := c.container.Invoke(func(env *environment.Environment, deploymentService *azure.StackDeployments) error {
+			if env == nil {
+				return ErrEnvironmentNotFound
+			}
+
+			deploymentName := fmt.Sprintf("azd-stack-%s", env.Name())
+			deployment, err := deploymentService.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), deploymentName)
+			if err != nil {
+				return err
+			}
+
+			c.deployment = deployment
+			return nil
+		})
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return c.deployment, nil
+}
+
+func (c *Context) AzureContext(ctx context.Context) (*AzureContext, error) {
+	if c.azureContext == nil {
+		azdEnv, err := c.Environment(ctx)
+		if err != nil {
+			if errors.Is(err, ErrEnvironmentNotFound) {
+				return NewEmptyAzureContext(), nil
+			}
+
+			return nil, err
+		}
+
+		scope := AzureScope{}
+		resources := AzureResourceList{}
+
+		if azdEnv != nil {
+			subscriptionId := azdEnv.GetSubscriptionId()
+			resourceGroup := azdEnv.Getenv(environment.ResourceGroupEnvVarName)
+			location := azdEnv.Getenv(environment.LocationEnvVarName)
+
+			scope.SubscriptionId = subscriptionId
+			scope.ResourceGroup = resourceGroup
+			scope.Location = location
+		}
+
+		deployment, err := c.Deployment(ctx)
+		if err != nil {
+			if errors.Is(err, azure.ErrDeploymentNotFound) {
+				return NewAzureContext(scope, &resources), nil
+			}
+
+			return nil, err
+		}
+
+		if deployment != nil {
+			for _, resource := range deployment.Resources {
+				if err := resources.Add(*resource.ID); err != nil {
+					return nil, err
+				}
+			}
+		}
+
+		c.azureContext = NewAzureContext(scope, &resources)
+	}
+
+	return c.azureContext, nil
+}
+
 func (c *Context) SaveEnvironment(ctx context.Context, env *environment.Environment) error {
 	err := c.container.Invoke(func(envManager environment.Manager) error {
 		return envManager.Save(ctx, env)
@@ -165,6 +240,8 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(azure.NewResourceService)
 	container.MustRegisterSingleton(azure.NewSubscriptionsService)
 	container.MustRegisterSingleton(azure.NewEntraIdService)
+	container.MustRegisterSingleton(azure.NewStandardDeployments)
+	container.MustRegisterSingleton(azure.NewStackDeployments)
 
 	container.MustRegisterSingleton(func() (azcore.TokenCredential, error) {
 		return current.Credential()
@@ -256,6 +333,120 @@ func registerComponents(ctx context.Context, container *ioc.NestedContainer) err
 			Transport: transport,
 		}
 	})
+
+	return nil
+}
+
+type AzureScope struct {
+	TenantId       string
+	SubscriptionId string
+	Location       string
+	ResourceGroup  string
+}
+
+type AzureResourceList struct {
+	resources []*arm.ResourceID
+}
+
+func (arl *AzureResourceList) Add(resourceId string) error {
+	if _, has := arl.FindById(resourceId); has {
+		return nil
+	}
+
+	parsedResource, err := arm.ParseResourceID(resourceId)
+	if err != nil {
+		return err
+	}
+
+	arl.resources = append(arl.resources, parsedResource)
+	log.Printf("Added resource: %s", resourceId)
+
+	return nil
+}
+
+func (arl *AzureResourceList) Find(predicate func(resourceId *arm.ResourceID) bool) (*arm.ResourceID, bool) {
+	for _, resource := range arl.resources {
+		if predicate(resource) {
+			return resource, true
+		}
+	}
+
+	return nil, false
+}
+
+func (arl *AzureResourceList) FindByType(resourceType azure.ResourceType) (*arm.ResourceID, bool) {
+	return arl.Find(func(resourceId *arm.ResourceID) bool {
+		return strings.EqualFold(resourceId.ResourceType.String(), string(resourceType))
+	})
+}
+
+func (arl *AzureResourceList) FindById(resourceId string) (*arm.ResourceID, bool) {
+	return arl.Find(func(resource *arm.ResourceID) bool {
+		return strings.EqualFold(resource.String(), resourceId)
+	})
+}
+
+func (arl *AzureResourceList) FindByTypeAndName(resourceType azure.ResourceType, resourceName string) (*arm.ResourceID, bool) {
+	return arl.Find(func(resource *arm.ResourceID) bool {
+		return strings.EqualFold(resource.ResourceType.String(), string(resourceType)) && strings.EqualFold(resource.Name, resourceName)
+	})
+}
+
+type AzureContext struct {
+	Scope     AzureScope
+	Resources *AzureResourceList
+}
+
+func NewEmptyAzureContext() *AzureContext {
+	return &AzureContext{
+		Scope:     AzureScope{},
+		Resources: &AzureResourceList{},
+	}
+}
+
+func NewAzureContext(scope AzureScope, resourceList *AzureResourceList) *AzureContext {
+	return &AzureContext{
+		Scope:     scope,
+		Resources: resourceList,
+	}
+}
+
+func (pc *AzureContext) EnsureSubscription(ctx context.Context) error {
+	if pc.Scope.SubscriptionId == "" {
+		subscription, err := PromptSubscription(context.Background(), nil)
+		if err != nil {
+			return err
+		}
+
+		pc.Scope.TenantId = subscription.TenantId
+		pc.Scope.SubscriptionId = subscription.Id
+	}
+
+	return nil
+}
+
+func (pc *AzureContext) EnsureResourceGroup(ctx context.Context) error {
+	if pc.Scope.ResourceGroup == "" {
+		resourceGroup, err := PromptResourceGroup(ctx, pc, nil)
+		if err != nil {
+			return err
+		}
+
+		pc.Scope.ResourceGroup = resourceGroup.Name
+	}
+
+	return nil
+}
+
+func (pc *AzureContext) EnsureLocation(ctx context.Context) error {
+	if pc.Scope.Location == "" {
+		location, err := PromptLocation(ctx, pc, nil)
+		if err != nil {
+			return err
+		}
+
+		pc.Scope.Location = location.Name
+	}
 
 	return nil
 }

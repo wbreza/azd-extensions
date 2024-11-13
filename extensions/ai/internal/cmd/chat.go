@@ -57,6 +57,11 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
+			azureContext, err := azdContext.AzureContext(ctx)
+			if err != nil {
+				return err
+			}
+
 			var armClientOptions *arm.ClientOptions
 			var azClientOptions *azcore.ClientOptions
 
@@ -71,19 +76,29 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
 			if err != nil {
-				return err
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
 			}
 
 			if flags.modelName != "" {
-				aiConfig.Models.ChatCompletion = flags.modelName
+				extensionConfig.Ai.Models.ChatCompletion = flags.modelName
 			}
 
-			if aiConfig.Models.ChatCompletion == "" {
+			if extensionConfig.Ai.Models.ChatCompletion == "" {
 				color.Yellow("No chat completion model was found. Please select or create a chat completion model.")
 
-				chatDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+				chatDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 					Capabilities: []string{
 						"chatCompletion",
 					},
@@ -98,31 +113,32 @@ func newChatCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig.Models.ChatCompletion = *chatDeployment.Name
+				extensionConfig.Ai.Models.ChatCompletion = *chatDeployment.Name
 				fmt.Println()
 			}
 
 			if flags.useSearch {
-				if aiConfig.Search.Service == "" {
-					searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+				if extensionConfig.Search.Service == "" {
+					searchService, err := internal.PromptSearchService(ctx, azdContext, azureContext)
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Search.Service = *searchService.Name
+					extensionConfig.Search.Service = *searchService.Name
+					extensionConfig.Search.Endpoint = fmt.Sprintf("https://%s.search.windows.net", extensionConfig.Search.Service)
 				}
 
-				if aiConfig.Search.Index == "" {
-					searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+				if extensionConfig.Search.Index == "" {
+					searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, azureContext)
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Search.Index = *searchIndex.Name
+					extensionConfig.Search.Index = *searchIndex.Name
 				}
 
-				if aiConfig.Models.Embeddings == "" {
-					embeddingDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+				if extensionConfig.Ai.Models.Embeddings == "" {
+					embeddingDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 						Capabilities: []string{
 							"embeddings",
 						},
@@ -131,11 +147,11 @@ func newChatCommand() *cobra.Command {
 						return err
 					}
 
-					aiConfig.Models.Embeddings = *embeddingDeployment.Name
+					extensionConfig.Ai.Models.Embeddings = *embeddingDeployment.Name
 				}
 			}
 
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 				return err
 			}
 
@@ -146,37 +162,32 @@ func newChatCommand() *cobra.Command {
 
 			loadingSpinner.Start(ctx)
 
-			account, err := internal.PromptAIServiceAccount(ctx, azdContext, aiConfig)
+			openAiClient, err := azopenai.NewClient(extensionConfig.Ai.Endpoint, credential, &azopenai.ClientOptions{ClientOptions: *azClientOptions})
 			if err != nil {
 				return err
 			}
 
-			openAiClient, err := azopenai.NewClient(*account.Properties.Endpoint, credential, &azopenai.ClientOptions{ClientOptions: *azClientOptions})
+			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(extensionConfig.Subscription, credential, armClientOptions)
 			if err != nil {
 				return err
 			}
 
-			deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, armClientOptions)
+			deployment, err := deploymentsClient.Get(ctx, extensionConfig.ResourceGroup, extensionConfig.Ai.Service, extensionConfig.Ai.Models.ChatCompletion, nil)
 			if err != nil {
 				return err
 			}
 
-			deployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, aiConfig.Models.ChatCompletion, nil)
-			if err != nil {
-				return err
-			}
-
-			hasVectorSearch := aiConfig.Search.Service != "" && aiConfig.Search.Index != "" && aiConfig.Models.Embeddings != ""
+			hasVectorSearch := extensionConfig.Search.Service != "" && extensionConfig.Search.Index != "" && extensionConfig.Ai.Models.Embeddings != ""
 
 			loadingSpinner.Stop(ctx)
 
-			fmt.Printf("AI Service: %s %s\n", color.CyanString(aiConfig.Service), color.HiBlackString("(%s)", aiConfig.ResourceGroup))
-			fmt.Printf("Chat Model: %s %s\n", color.CyanString(aiConfig.Models.ChatCompletion), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
+			fmt.Printf("AI Service: %s %s\n", color.CyanString(extensionConfig.Ai.Service), color.HiBlackString("(%s)", extensionConfig.ResourceGroup))
+			fmt.Printf("Chat Model: %s %s\n", color.CyanString(extensionConfig.Ai.Models.ChatCompletion), color.HiBlackString("(Model: %s, Version: %s)", *deployment.Properties.Model.Name, *deployment.Properties.Model.Version))
 			fmt.Println()
 			if hasVectorSearch {
-				fmt.Printf("Search Service: %s %s\n", color.CyanString(aiConfig.Search.Service), color.HiBlackString("(%s)", aiConfig.Search.Index))
-				fmt.Printf("Search Index: %s\n", color.CyanString(aiConfig.Search.Index))
-				fmt.Printf("Embeddings Model: %s\n", color.CyanString(aiConfig.Models.Embeddings))
+				fmt.Printf("Search Service: %s %s\n", color.CyanString(extensionConfig.Search.Service), color.HiBlackString("(%s)", extensionConfig.Search.Index))
+				fmt.Printf("Search Index: %s\n", color.CyanString(extensionConfig.Search.Index))
+				fmt.Printf("Embeddings Model: %s\n", color.CyanString(extensionConfig.Ai.Models.Embeddings))
 				fmt.Println()
 			}
 			fmt.Printf("System Message: %s\n", color.CyanString(flags.systemMessage))
@@ -225,14 +236,13 @@ func newChatCommand() *cobra.Command {
 				if hasVectorSearch {
 					embeddingsResponse, err := openAiClient.GetEmbeddings(ctx, azopenai.EmbeddingsOptions{
 						Input:          []string{userMessage},
-						DeploymentName: &aiConfig.Models.Embeddings,
+						DeploymentName: &extensionConfig.Ai.Models.Embeddings,
 					}, nil)
 					if err != nil {
 						return err
 					}
 
-					searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
-					searchClient, err := azsearchindex.NewDocumentsClient(searchEndpoint, aiConfig.Search.Index, credential, azClientOptions)
+					searchClient, err := azsearchindex.NewDocumentsClient(extensionConfig.Search.Endpoint, extensionConfig.Search.Index, credential, azClientOptions)
 					if err != nil {
 						return err
 					}
@@ -267,7 +277,7 @@ func newChatCommand() *cobra.Command {
 				}
 
 				if totalTokenCount > 1500 {
-					summarizedMessage, err := summarizeMessages(ctx, openAiClient, messages, aiConfig)
+					summarizedMessage, err := summarizeMessages(ctx, openAiClient, messages, extensionConfig)
 					if err != nil {
 						return err
 					}
@@ -287,7 +297,7 @@ func newChatCommand() *cobra.Command {
 				err = thinkingSpinner.Run(ctx, func(ctx context.Context) error {
 					response, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
 						Messages:       messages,
-						DeploymentName: &aiConfig.Models.ChatCompletion,
+						DeploymentName: &extensionConfig.Ai.Models.ChatCompletion,
 						Temperature:    &flags.temperature,
 						ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
 						MaxTokens:      to.Ptr(flags.maxTokens),
@@ -314,7 +324,7 @@ func newChatCommand() *cobra.Command {
 
 						functionResponse, err := openAiClient.GetChatCompletions(ctx, azopenai.ChatCompletionsOptions{
 							Messages:       messages,
-							DeploymentName: &aiConfig.Models.ChatCompletion,
+							DeploymentName: &extensionConfig.Ai.Models.ChatCompletion,
 							Temperature:    &flags.temperature,
 							ResponseFormat: &azopenai.ChatCompletionsTextResponseFormat{},
 							MaxTokens:      to.Ptr(flags.maxTokens),
@@ -377,7 +387,7 @@ func getDateTime() string {
 	return time.Now().Format(time.RFC1123)
 }
 
-func summarizeMessages(ctx context.Context, openAiClient *azopenai.Client, messages []azopenai.ChatRequestMessageClassification, aiConfig *internal.AiConfig) (string, error) {
+func summarizeMessages(ctx context.Context, openAiClient *azopenai.Client, messages []azopenai.ChatRequestMessageClassification, aiConfig *internal.ExtensionConfig) (string, error) {
 	// Concatenate message content to form a single text
 	var content []string
 	for _, msg := range messages {
@@ -411,7 +421,7 @@ func summarizeMessages(ctx context.Context, openAiClient *azopenai.Client, messa
 				Content: azopenai.NewChatRequestUserMessageContent(summarizationPrompt),
 			},
 		},
-		DeploymentName: &aiConfig.Models.ChatCompletion,
+		DeploymentName: &aiConfig.Ai.Models.ChatCompletion,
 		MaxTokens:      to.Ptr(int32(500)), // Adjust token limit for summary response
 	}, nil)
 	if err != nil {

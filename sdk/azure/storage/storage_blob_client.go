@@ -174,11 +174,10 @@ func NewBlobSdkClient(
 	}
 
 	if accountConfig.Endpoint == "" {
-		accountConfig.Endpoint = cloud.StorageEndpointSuffix
+		accountConfig.Endpoint = fmt.Sprintf("https://%s.blob.%s", accountConfig.AccountName, cloud.StorageEndpointSuffix)
 	}
 
-	serviceUrl := fmt.Sprintf("https://%s.blob.%s", accountConfig.AccountName, accountConfig.Endpoint)
-	client, err := azblob.NewClient(serviceUrl, credential, blobOptions)
+	client, err := azblob.NewClient(accountConfig.Endpoint, credential, blobOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blob client, %w", err)
 	}

@@ -68,13 +68,28 @@ func newGenerateCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
 			}
 
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+			}
+
 			if flags.Model != "" {
-				aiConfig.Models.Embeddings = flags.Model
+				extensionConfig.Ai.Models.Embeddings = flags.Model
 			}
 
 			if flags.Output == "" {
@@ -85,10 +100,10 @@ func newGenerateCommand() *cobra.Command {
 				flags.Pattern = "*"
 			}
 
-			if aiConfig.Models.ChatCompletion == "" {
+			if extensionConfig.Ai.Models.ChatCompletion == "" {
 				color.Yellow("No chat completion model was found. Please select or create a chat completion model.")
 
-				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 					Capabilities: []string{
 						"chatCompletion",
 					},
@@ -97,13 +112,13 @@ func newGenerateCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig.Models.ChatCompletion = *selectedModelDeployment.Name
+				extensionConfig.Ai.Models.ChatCompletion = *selectedModelDeployment.Name
 			}
 
-			if aiConfig.Models.Embeddings == "" {
+			if extensionConfig.Ai.Models.Embeddings == "" {
 				color.Yellow("No text embedding model was found. Please select or create a text embedding model.")
 
-				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+				selectedModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 					Capabilities: []string{
 						"embeddings",
 					},
@@ -112,10 +127,10 @@ func newGenerateCommand() *cobra.Command {
 					return err
 				}
 
-				aiConfig.Models.Embeddings = *selectedModelDeployment.Name
+				extensionConfig.Ai.Models.Embeddings = *selectedModelDeployment.Name
 			}
 
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 				return err
 			}
 
@@ -159,7 +174,7 @@ func newGenerateCommand() *cobra.Command {
 				return err
 			}
 
-			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
 			if err != nil {
 				return err
 			}
@@ -230,42 +245,58 @@ func newIngestCommand() *cobra.Command {
 				return err
 			}
 
-			if flags.Pattern == "" {
-				flags.Pattern = "*"
-			}
-
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
 			}
 
-			if flags.ServiceName != "" {
-				aiConfig.Search.Service = flags.ServiceName
+			if flags.Pattern == "" {
+				flags.Pattern = "*"
 			}
 
-			if aiConfig.Search.Service == "" {
-				searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Search.Service = *searchService.Name
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+			}
+
+			if flags.ServiceName != "" {
+				extensionConfig.Search.Service = flags.ServiceName
+			}
+
+			if extensionConfig.Search.Service == "" {
+				searchService, err := internal.PromptSearchService(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig.Search.Service = *searchService.Name
+				extensionConfig.Search.Endpoint = fmt.Sprintf("https://%s.search.windows.net", extensionConfig.Search.Service)
 			}
 
 			if flags.IndexName != "" {
-				aiConfig.Search.Index = flags.IndexName
+				extensionConfig.Search.Index = flags.IndexName
 			}
 
-			if aiConfig.Search.Index == "" {
-				searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+			if extensionConfig.Search.Index == "" {
+				searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Search.Index = *searchIndex.Name
+				extensionConfig.Search.Index = *searchIndex.Name
 			}
 
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 				return err
 			}
 
@@ -282,8 +313,8 @@ func newIngestCommand() *cobra.Command {
 			}
 
 			fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
-			fmt.Printf("Search Service: %s\n", color.CyanString(aiConfig.Search.Service))
-			fmt.Printf("Search Index: %s\n", color.CyanString(aiConfig.Search.Index))
+			fmt.Printf("Search Service: %s\n", color.CyanString(extensionConfig.Search.Service))
+			fmt.Printf("Search Index: %s\n", color.CyanString(extensionConfig.Search.Index))
 
 			if !flags.Force {
 				fmt.Println()
@@ -304,7 +335,7 @@ func newIngestCommand() *cobra.Command {
 				}
 			}
 
-			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
 			if err != nil {
 				return err
 			}

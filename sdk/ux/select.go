@@ -20,7 +20,7 @@ type SelectConfig struct {
 	// The reader to use for input (default: os.Stdin)
 	Reader io.Reader
 	// The default value to use for the prompt (default: nil)
-	DefaultIndex *int
+	SelectedIndex *int
 	// The message to display before the prompt
 	Message string
 	// The available options to display
@@ -40,7 +40,7 @@ type SelectConfig struct {
 var DefaultSelectConfig SelectConfig = SelectConfig{
 	Writer:          os.Stdout,
 	Reader:          os.Stdin,
-	DefaultIndex:    Ptr(0),
+	SelectedIndex:   Ptr(0),
 	DisplayCount:    6,
 	EnableFiltering: Ptr(true),
 	DisplayNumbers:  Ptr(false),
@@ -295,8 +295,8 @@ func (p *Select) renderValidation(printer Printer) {
 }
 
 func (p *Select) renderMessage1(printer Printer) {
-	if p.selectedIndex == nil && p.config.DefaultIndex != nil {
-		p.selectedIndex = p.config.DefaultIndex
+	if p.selectedIndex == nil && p.config.SelectedIndex != nil {
+		p.selectedIndex = p.config.SelectedIndex
 	}
 
 	printer.Fprintf(color.CyanString("? "))
@@ -333,8 +333,8 @@ func (p *Select) renderMessage1(printer Printer) {
 func (p *Select) renderMessage2(printer Printer) {
 	printer.Fprintf(color.CyanString("? "))
 
-	if p.selectedIndex == nil && p.config.DefaultIndex != nil {
-		p.selectedIndex = p.config.DefaultIndex
+	if p.selectedIndex == nil && p.config.SelectedIndex != nil {
+		p.selectedIndex = p.config.SelectedIndex
 	}
 
 	// Message

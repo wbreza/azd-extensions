@@ -1,5 +1,12 @@
 package azure
 
+import (
+	"errors"
+	"time"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+)
+
 type ResourceType string
 
 const (
@@ -81,3 +88,73 @@ type ResourceExtended struct {
 	Resource
 	Kind string `json:"kind"`
 }
+
+var (
+	ErrDeploymentNotFound = errors.New("deployment not found")
+)
+
+type ResourceDeployment struct {
+	// The Azure resource id of the deployment operation
+	Id string
+
+	// The location of the deployment
+	Location string
+
+	// The Azure resource id of the actual deployment object
+	DeploymentId string
+
+	// The deployment name
+	Name string
+
+	// The deployment type
+	Type string
+
+	// The tags associated with the deployment
+	Tags map[string]*string
+
+	// The outputs from the deployment
+	Outputs any
+
+	// The hash produced for the template.
+	TemplateHash *string
+
+	// The timestamp of the template deployment.
+	Timestamp time.Time
+
+	// The resources created from the deployment
+	Resources []*armresources.ResourceReference
+
+	// The dependencies of the deployment
+	Dependencies []*armresources.Dependency
+
+	// The status of the deployment
+	ProvisioningState DeploymentProvisioningState
+
+	PortalUrl string
+
+	OutputsUrl string
+
+	DeploymentUrl string
+}
+
+type DeploymentProvisioningState string
+
+const (
+	DeploymentProvisioningStateAccepted                DeploymentProvisioningState = "Accepted"
+	DeploymentProvisioningStateCanceled                DeploymentProvisioningState = "Canceled"
+	DeploymentProvisioningStateCanceling               DeploymentProvisioningState = "Canceling"
+	DeploymentProvisioningStateCreating                DeploymentProvisioningState = "Creating"
+	DeploymentProvisioningStateDeleted                 DeploymentProvisioningState = "Deleted"
+	DeploymentProvisioningStateDeleting                DeploymentProvisioningState = "Deleting"
+	DeploymentProvisioningStateDeletingResources       DeploymentProvisioningState = "DeletingResources"
+	DeploymentProvisioningStateDeploying               DeploymentProvisioningState = "Deploying"
+	DeploymentProvisioningStateFailed                  DeploymentProvisioningState = "Failed"
+	DeploymentProvisioningStateNotSpecified            DeploymentProvisioningState = "NotSpecified"
+	DeploymentProvisioningStateReady                   DeploymentProvisioningState = "Ready"
+	DeploymentProvisioningStateRunning                 DeploymentProvisioningState = "Running"
+	DeploymentProvisioningStateSucceeded               DeploymentProvisioningState = "Succeeded"
+	DeploymentProvisioningStateUpdatingDenyAssignments DeploymentProvisioningState = "UpdatingDenyAssignments"
+	DeploymentProvisioningStateValidating              DeploymentProvisioningState = "Validating"
+	DeploymentProvisioningStateWaiting                 DeploymentProvisioningState = "Waiting"
+	DeploymentProvisioningStateUpdating                DeploymentProvisioningState = "Updating"
+)

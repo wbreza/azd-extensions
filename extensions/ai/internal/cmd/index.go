@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/ext"
@@ -52,30 +54,46 @@ func newCreateIndexCommand() *cobra.Command {
 				return err
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
 			}
 
-			if aiConfig.Search.Service == "" {
-				searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Search.Service = *searchService.Name
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
 			}
 
-			if aiConfig.Search.Index == "" {
-				searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+			if extensionConfig.Search.Service == "" {
+				searchService, err := internal.PromptSearchService(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Search.Index = *searchIndex.Name
+				extensionConfig.Search.Service = *searchService.Name
+				extensionConfig.Search.Endpoint = fmt.Sprintf("https://%s.search.windows.net", extensionConfig.Search.Service)
 			}
 
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			if extensionConfig.Search.Index == "" {
+				searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig.Search.Index = *searchIndex.Name
+			}
+
+			if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 				return err
 			}
 

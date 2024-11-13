@@ -57,42 +57,58 @@ func newUploadCommand() *cobra.Command {
 				return err
 			}
 
+			azureContext, err := azdContext.AzureContext(ctx)
+			if err != nil {
+				return err
+			}
+
 			if flags.Pattern == "" {
 				flags.Pattern = "*"
 			}
 
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
 			if err != nil {
-				return err
-			}
-
-			if err != nil {
-				return err
-			}
-
-			if aiConfig.Storage.Account == "" {
-				storageAccount, err := internal.PromptStorageAccount(ctx, azdContext, aiConfig)
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Storage.Account = *storageAccount.Name
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+			}
+
+			if err != nil {
+				return err
+			}
+
+			if extensionConfig.Storage.Account == "" {
+				storageAccount, err := internal.PromptStorageAccount(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig.Storage.Account = *storageAccount.Name
+				extensionConfig.Storage.Endpoint = *storageAccount.Properties.PrimaryEndpoints.Blob
 			}
 
 			if flags.Container != "" {
-				aiConfig.Storage.Container = flags.Container
+				extensionConfig.Storage.Container = flags.Container
 			}
 
-			if aiConfig.Storage.Container == "" {
-				container, err := internal.PromptStorageContainer(ctx, azdContext, aiConfig)
+			if extensionConfig.Storage.Container == "" {
+				container, err := internal.PromptStorageContainer(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
 				}
 
-				aiConfig.Storage.Container = *container.Name
+				extensionConfig.Storage.Container = *container.Name
 			}
 
-			if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+			if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 				return err
 			}
 
@@ -113,8 +129,8 @@ func newUploadCommand() *cobra.Command {
 			}
 
 			fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
-			fmt.Printf("Storage Account: %s\n", color.CyanString(aiConfig.Storage.Account))
-			fmt.Printf("Storage Container: %s\n", color.CyanString(aiConfig.Storage.Container))
+			fmt.Printf("Storage Account: %s\n", color.CyanString(extensionConfig.Storage.Account))
+			fmt.Printf("Storage Container: %s\n", color.CyanString(extensionConfig.Storage.Container))
 
 			if !flags.Force {
 				fmt.Println()
@@ -137,7 +153,7 @@ func newUploadCommand() *cobra.Command {
 
 			taskList := ux.NewTaskList(nil)
 
-			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
 			if err != nil {
 				return err
 			}

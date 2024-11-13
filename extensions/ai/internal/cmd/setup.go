@@ -41,15 +41,30 @@ func newSetupCommand() *cobra.Command {
 				return err
 			}
 
-			fmt.Println("Let's get started by setting up your AI project")
-			fmt.Println()
-
-			aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+			azureContext, err := azdContext.AzureContext(ctx)
 			if err != nil {
 				return err
 			}
 
-			if aiConfig.Models.ChatCompletion == "" {
+			fmt.Println("Let's get started by setting up your AI project")
+			fmt.Println()
+
+			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+			if err != nil {
+				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
+				if err != nil {
+					return err
+				}
+
+				extensionConfig = &internal.ExtensionConfig{
+					Ai: internal.AiConfig{
+						Service:  *aiAccount.Name,
+						Endpoint: *aiAccount.Properties.Endpoint,
+					},
+				}
+			}
+
+			if extensionConfig.Ai.Models.ChatCompletion == "" {
 				chatConfirm := ux.NewConfirm(&ux.ConfirmConfig{
 					Message:      "Would you like to enable chat for your AI project?",
 					DefaultValue: to.Ptr(true),
@@ -64,14 +79,14 @@ func newSetupCommand() *cobra.Command {
 				}
 
 				if *userChatConfirmed {
-					chatModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+					chatModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 						Capabilities: []string{"chatCompletion"},
 					})
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Models.ChatCompletion = *chatModelDeployment.Name
+					extensionConfig.Ai.Models.ChatCompletion = *chatModelDeployment.Name
 				}
 			}
 
@@ -86,42 +101,44 @@ func newSetupCommand() *cobra.Command {
 			}
 
 			if *userCustomDataConfirmed {
-				if aiConfig.Storage.Account == "" || aiConfig.Storage.Container == "" {
+				if extensionConfig.Storage.Account == "" || extensionConfig.Storage.Container == "" {
 					fmt.Println()
 					color.Yellow("A storage account was not found. Lets get that setup for you.")
 
-					storageAccount, err := internal.PromptStorageAccount(ctx, azdContext, aiConfig)
+					storageAccount, err := internal.PromptStorageAccount(ctx, azdContext, azureContext)
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Storage.Account = *storageAccount.Name
+					extensionConfig.Storage.Account = *storageAccount.Name
+					extensionConfig.Storage.Endpoint = *storageAccount.Properties.PrimaryEndpoints.Blob
 
-					storageContainer, err := internal.PromptStorageContainer(ctx, azdContext, aiConfig)
+					storageContainer, err := internal.PromptStorageContainer(ctx, azdContext, azureContext)
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Storage.Container = *storageContainer.Name
+					extensionConfig.Storage.Container = *storageContainer.Name
 				}
 
-				if aiConfig.Search.Service == "" || aiConfig.Search.Index == "" {
+				if extensionConfig.Search.Service == "" || extensionConfig.Search.Index == "" {
 					fmt.Println()
 					color.Yellow("An AI Search service was not found. Lets get that setup for you.")
 
-					searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+					searchService, err := internal.PromptSearchService(ctx, azdContext, azureContext)
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Search.Service = *searchService.Name
+					extensionConfig.Search.Service = *searchService.Name
+					extensionConfig.Search.Endpoint = fmt.Sprintf("https://%s.search.windows.net", extensionConfig.Search.Service)
 
-					searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+					searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, azureContext)
 					if err != nil {
 						return err
 					}
 
-					aiConfig.Search.Index = *searchIndex.Name
+					extensionConfig.Search.Index = *searchIndex.Name
 				}
 
 				prepDataConfirm := ux.NewConfirm(&ux.ConfirmConfig{
@@ -178,30 +195,30 @@ func newSetupCommand() *cobra.Command {
 						return err
 					}
 
-					if aiConfig.Models.Embeddings == "" {
+					if extensionConfig.Ai.Models.Embeddings == "" {
 						fmt.Println()
 						color.Yellow("A text embedding model was not found. Lets get that setup for you.")
 
-						embeddingModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+						embeddingModelDeployment, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 							Capabilities: []string{"embeddings"},
 						})
 						if err != nil {
 							return err
 						}
 
-						aiConfig.Models.Embeddings = *embeddingModelDeployment.Name
+						extensionConfig.Ai.Models.Embeddings = *embeddingModelDeployment.Name
 					}
 
 					fmt.Println()
-					fmt.Printf("AI Service: %s\n", color.CyanString(aiConfig.Service))
-					fmt.Printf("Chat Completion Model: %s\n", color.CyanString(aiConfig.Models.ChatCompletion))
+					fmt.Printf("AI Service: %s\n", color.CyanString(extensionConfig.Ai.Service))
+					fmt.Printf("Chat Completion Model: %s\n", color.CyanString(extensionConfig.Ai.Models.ChatCompletion))
 					fmt.Println()
-					fmt.Printf("Storage Account: %s\n", color.CyanString(aiConfig.Storage.Account))
-					fmt.Printf("Storage Container: %s\n", color.CyanString(aiConfig.Storage.Container))
+					fmt.Printf("Storage Account: %s\n", color.CyanString(extensionConfig.Storage.Account))
+					fmt.Printf("Storage Container: %s\n", color.CyanString(extensionConfig.Storage.Container))
 					fmt.Println()
-					fmt.Printf("Search Service: %s\n", color.CyanString(aiConfig.Search.Service))
-					fmt.Printf("Search Index: %s\n", color.CyanString(aiConfig.Search.Index))
-					fmt.Printf("Embeddings Model: %s\n", color.CyanString(aiConfig.Models.Embeddings))
+					fmt.Printf("Search Service: %s\n", color.CyanString(extensionConfig.Search.Service))
+					fmt.Printf("Search Index: %s\n", color.CyanString(extensionConfig.Search.Index))
+					fmt.Printf("Embeddings Model: %s\n", color.CyanString(extensionConfig.Ai.Models.Embeddings))
 					fmt.Println()
 					fmt.Printf("Source Data: %s\n", color.CyanString(absSourcePath))
 					fmt.Printf("Embeddings Output: %s\n", color.CyanString(absOutputPath))
@@ -212,7 +229,7 @@ func newSetupCommand() *cobra.Command {
 						DefaultValue: to.Ptr(true),
 					})
 
-					if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+					if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 						return err
 					}
 
@@ -225,7 +242,7 @@ func newSetupCommand() *cobra.Command {
 						return ux.ErrCancelled
 					}
 
-					docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, aiConfig)
+					docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
 					if err != nil {
 						return err
 					}

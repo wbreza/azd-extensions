@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,14 +17,16 @@ import (
 	"github.com/wbreza/azd-extensions/sdk/azure"
 	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/ext"
-	"github.com/wbreza/azd-extensions/sdk/ext/prompt"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 	"github.com/wbreza/azure-sdk-for-go/sdk/data/azsearch"
 )
 
-func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armcognitiveservices.Account, error) {
-	subscription, err := LoadOrPromptSubscription(ctx, azdContext, aiConfig)
-	if err != nil {
+func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext) (*armcognitiveservices.Account, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	if err := azureContext.EnsureSubscription(ctx); err != nil {
 		return nil, err
 	}
 
@@ -44,40 +47,21 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 		return nil
 	})
 
-	accountsClient, err := armcognitiveservices.NewAccountsClient(subscription.Id, credential, armClientOptions)
+	accountsClient, err := armcognitiveservices.NewAccountsClient(azureContext.Scope.SubscriptionId, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	if aiConfig == nil {
-		aiConfig = &AiConfig{
-			Subscription: subscription.Id,
-		}
-	}
-
 	var aiService *armcognitiveservices.Account
 
-	if aiConfig.Service != "" {
-		existingAccount, err := accountsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		aiService = &existingAccount.Account
-		return aiService, nil
-	}
-
-	selectedResource, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
+	selectedResource, err := ext.PromptSubscriptionResource(ctx, azureContext, ext.ResourceOptions{
 		ResourceType:            to.Ptr(azure.ResourceTypeCognitiveServiceAccount),
 		Kinds:                   []string{"OpenAI", "AIServices", "CognitiveServices"},
 		ResourceTypeDisplayName: "Azure AI service",
 		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
-			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
-			if err != nil {
+			if err := azureContext.EnsureResourceGroup(ctx); err != nil {
 				return nil, err
 			}
-
-			aiConfig.ResourceGroup = resourceGroup.Name
 
 			namePrompt := ux.NewPrompt(&ux.PromptConfig{
 				Message: "Enter the name for the Azure AI service account",
@@ -99,7 +83,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 							Identity: &armcognitiveservices.Identity{
 								Type: to.Ptr(armcognitiveservices.ResourceIdentityTypeSystemAssigned),
 							},
-							Location: &resourceGroup.Location,
+							Location: &azureContext.Scope.Location,
 							Kind:     to.Ptr("OpenAI"),
 							SKU: &armcognitiveservices.SKU{
 								Name: to.Ptr("S0"),
@@ -111,7 +95,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 							},
 						}
 
-						poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, account, nil)
+						poller, err := accountsClient.BeginCreate(ctx, azureContext.Scope.ResourceGroup, accountName, account, nil)
 						if err != nil {
 							return ux.Error, common.NewDetailedError("Failed to create Azure AI service account", err)
 						}
@@ -136,7 +120,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
-								aiConfig.Subscription,
+								azureContext.Scope.SubscriptionId,
 								*aiService.ID,
 								principal.Oid,
 								azure.RoleCognitiveServicesOpenAIContributor,
@@ -194,22 +178,40 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, aiConf
 }
 
 type PromptModelDeploymentOptions struct {
-	SelectorOptions *prompt.PromptSelectOptions
+	SelectorOptions *ext.SelectOptions
 	Capabilities    []string
 }
 
-func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, options *PromptModelDeploymentOptions) (*armcognitiveservices.Deployment, error) {
+func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext, options *PromptModelDeploymentOptions) (*armcognitiveservices.Deployment, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	var aiService *arm.ResourceID
+
+	aiService, has := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccount)
+	if !has {
+		selectedAiService, err := PromptAIServiceAccount(ctx, azdContext, azureContext)
+		if err != nil {
+			return nil, err
+		}
+
+		if match, has := azureContext.Resources.FindById(*selectedAiService.ID); has {
+			aiService = match
+		}
+	}
+
 	if options == nil {
 		options = &PromptModelDeploymentOptions{}
 	}
 
 	if options.SelectorOptions == nil {
-		options.SelectorOptions = &prompt.PromptSelectOptions{}
+		options.SelectorOptions = &ext.SelectOptions{}
 	}
 
-	mergedSelectorOptions := &prompt.PromptSelectOptions{}
+	mergedSelectorOptions := &ext.SelectOptions{}
 
-	defaultSelectorOptions := &prompt.PromptSelectOptions{
+	defaultSelectorOptions := &ext.SelectOptions{
 		Message:            "Select an AI model deployment",
 		LoadingMessage:     "Loading model deployments...",
 		AllowNewResource:   to.Ptr(true),
@@ -231,16 +233,25 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 		return nil
 	})
 
-	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(aiConfig.Subscription, credential, armClientOptions)
+	deploymentsClient, err := armcognitiveservices.NewDeploymentsClient(azureContext.Scope.SubscriptionId, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armcognitiveservices.Deployment]{
+	existingResource, _ := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccountDeployment)
+
+	return ext.PromptCustomResource(ctx, ext.CustomResourceOptions[armcognitiveservices.Deployment]{
+		Selected: func(resource *armcognitiveservices.Deployment) bool {
+			if existingResource == nil {
+				return false
+			}
+
+			return strings.EqualFold(*resource.ID, existingResource.String())
+		},
 		SelectorOptions: mergedSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*armcognitiveservices.Deployment, error) {
 			deploymentList := []*armcognitiveservices.Deployment{}
-			modelPager := deploymentsClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Service, nil)
+			modelPager := deploymentsClient.NewListPager(aiService.ResourceGroupName, aiService.Name, nil)
 			for modelPager.More() {
 				models, err := modelPager.NextPage(ctx)
 				if err != nil {
@@ -269,14 +280,14 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 			return fmt.Sprintf("%s %s", *resource.Name, color.HiBlackString("(Model: %s, Version: %s)", *resource.Properties.Model.Name, *resource.Properties.Model.Version)), nil
 		},
 		CreateResource: func(ctx context.Context) (*armcognitiveservices.Deployment, error) {
-			selectedModel, err := PromptModel(ctx, azdContext, aiConfig, &PromptModelOptions{
+			selectedModel, err := PromptModel(ctx, azdContext, azureContext, &PromptModelOptions{
 				Capabilities: options.Capabilities,
 			})
 			if err != nil {
 				return nil, err
 			}
 
-			selectedSku, err := PromptModelSku(ctx, azdContext, aiConfig, selectedModel)
+			selectedSku, err := PromptModelSku(ctx, azdContext, selectedModel)
 			if err != nil {
 				return nil, err
 			}
@@ -317,12 +328,12 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, aiConfi
 				AddTask(ux.TaskOptions{
 					Title: taskName,
 					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-						existingDeployment, err := deploymentsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, nil)
+						existingDeployment, err := deploymentsClient.Get(ctx, aiService.ResourceGroupName, aiService.Name, deploymentName, nil)
 						if err == nil && *existingDeployment.Name == deploymentName {
 							return ux.Error, errors.New("deployment with the same name already exists")
 						}
 
-						poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, aiConfig.ResourceGroup, aiConfig.Service, deploymentName, deployment, nil)
+						poller, err := deploymentsClient.BeginCreateOrUpdate(ctx, aiService.ResourceGroupName, aiService.Name, deploymentName, deployment, nil)
 						if err != nil {
 							return ux.Error, err
 						}
@@ -351,7 +362,23 @@ type PromptModelOptions struct {
 	Capabilities []string
 }
 
-func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, options *PromptModelOptions) (*armcognitiveservices.Model, error) {
+func PromptModel(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext, options *PromptModelOptions) (*armcognitiveservices.Model, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	aiService, has := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccount)
+	if !has {
+		selectedAiAccount, err := PromptAIServiceAccount(ctx, azdContext, azureContext)
+		if err != nil {
+			return nil, err
+		}
+
+		if match, has := azureContext.Resources.FindById(*selectedAiAccount.ID); has {
+			aiService = match
+		}
+	}
+
 	if options == nil {
 		options = &PromptModelOptions{
 			Capabilities: []string{},
@@ -364,8 +391,8 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 		return nil
 	})
 
-	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armcognitiveservices.Model]{
-		SelectorOptions: &prompt.PromptSelectOptions{
+	return ext.PromptCustomResource(ctx, ext.CustomResourceOptions[armcognitiveservices.Model]{
+		SelectorOptions: &ext.SelectOptions{
 			Message:          "Select a model",
 			LoadingMessage:   "Loading models...",
 			AllowNewResource: to.Ptr(false),
@@ -376,7 +403,7 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 				return nil, err
 			}
 
-			clientFactory, err := armcognitiveservices.NewClientFactory(aiConfig.Subscription, credential, armClientOptions)
+			clientFactory, err := armcognitiveservices.NewClientFactory(aiService.SubscriptionID, credential, armClientOptions)
 			if err != nil {
 				return nil, err
 			}
@@ -384,7 +411,7 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 			accountsClient := clientFactory.NewAccountsClient()
 			modelsClient := clientFactory.NewModelsClient()
 
-			aiService, err := accountsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+			aiService, err := accountsClient.Get(ctx, aiService.ResourceGroupName, aiService.Name, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -426,9 +453,9 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfi
 	})
 }
 
-func PromptModelSku(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig, model *armcognitiveservices.Model) (*armcognitiveservices.ModelSKU, error) {
-	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armcognitiveservices.ModelSKU]{
-		SelectorOptions: &prompt.PromptSelectOptions{
+func PromptModelSku(ctx context.Context, azdContext *ext.Context, model *armcognitiveservices.Model) (*armcognitiveservices.ModelSKU, error) {
+	return ext.PromptCustomResource(ctx, ext.CustomResourceOptions[armcognitiveservices.ModelSKU]{
+		SelectorOptions: &ext.SelectOptions{
 			Message:          "Select a deployment type",
 			LoadingMessage:   "Loading deployment types...",
 			AllowNewResource: to.Ptr(false),
@@ -442,7 +469,19 @@ func PromptModelSku(ctx context.Context, azdContext *ext.Context, aiConfig *AiCo
 	})
 }
 
-func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.Account, error) {
+func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext) (*armstorage.Account, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	if err := azureContext.EnsureSubscription(ctx); err != nil {
+		return nil, err
+	}
+
+	if err := azureContext.EnsureResourceGroup(ctx); err != nil {
+		return nil, err
+	}
+
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
@@ -464,48 +503,15 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 		return nil, err
 	}
 
-	accountsClient, err := armstorage.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
+	accountsClient, err := armstorage.NewAccountsClient(azureContext.Scope.SubscriptionId, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armstorage.Account]{
-		SelectorOptions: &prompt.PromptSelectOptions{
-			Message:            "Select a storage account",
-			LoadingMessage:     "Loading storage accounts...",
-			AllowNewResource:   to.Ptr(true),
-			NewResourceMessage: "Create a new storage account",
-			CreatingMessage:    "Creating storage account...",
-		},
-		LoadData: func(ctx context.Context) ([]*armstorage.Account, error) {
-			storageAccounts := []*armstorage.Account{}
-
-			pager := accountsClient.NewListPager(nil)
-			for pager.More() {
-				pageResponse, err := pager.NextPage(ctx)
-				if err != nil {
-					return nil, err
-				}
-
-				storageAccounts = append(storageAccounts, pageResponse.Value...)
-			}
-
-			return storageAccounts, nil
-		},
-		DisplayResource: func(resource *armstorage.Account) (string, error) {
-			resourceId, err := arm.ParseResourceID(*resource.ID)
-			if err != nil {
-				return "", err
-			}
-
-			return fmt.Sprintf("%s %s", *resource.Name, color.HiBlackString("(%s)", resourceId.ResourceGroupName)), nil
-		},
-		CreateResource: func(ctx context.Context) (*armstorage.Account, error) {
-			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
-			if err != nil {
-				return nil, err
-			}
-
+	selectedResource, err := ext.PromptSubscriptionResource(ctx, azureContext, ext.ResourceOptions{
+		ResourceType:            to.Ptr(azure.ResourceTypeStorageAccount),
+		ResourceTypeDisplayName: "Azure Storage account",
+		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
 			namePrompt := ux.NewPrompt(&ux.PromptConfig{
 				Message: "Enter the name for the storage account",
 			})
@@ -524,7 +530,7 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 					Title: taskName,
 					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						accountCreateParams := armstorage.AccountCreateParameters{
-							Location: &resourceGroup.Location,
+							Location: &azureContext.Scope.Location,
 							SKU: &armstorage.SKU{
 								Name: to.Ptr(armstorage.SKUNameStandardLRS),
 							},
@@ -537,7 +543,7 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 							},
 						}
 
-						poller, err := accountsClient.BeginCreate(ctx, resourceGroup.Name, accountName, accountCreateParams, nil)
+						poller, err := accountsClient.BeginCreate(ctx, azureContext.Scope.ResourceGroup, accountName, accountCreateParams, nil)
 						if err != nil {
 							return ux.Error, common.NewDetailedError("Failed to create storage account", err)
 						}
@@ -561,7 +567,7 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
-								aiConfig.Subscription,
+								azureContext.Scope.SubscriptionId,
 								*storageAccount.ID,
 								principal.Oid,
 								azure.RoleDefinitionStorageBlobDataContributor,
@@ -586,19 +592,50 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, aiConfig
 				return nil, err
 			}
 
-			return storageAccount, nil
+			return &azure.ResourceExtended{
+				Resource: azure.Resource{
+					Id:       *storageAccount.ID,
+					Name:     *storageAccount.Name,
+					Type:     *storageAccount.Type,
+					Location: *storageAccount.Location,
+				},
+				Kind: string(*storageAccount.Kind),
+			}, nil
 		},
 	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	parsedResource, err := arm.ParseResourceID(selectedResource.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	storageAccount, err := accountsClient.GetProperties(ctx, parsedResource.ResourceGroupName, parsedResource.Name, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &storageAccount.Account, nil
 }
 
-func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armstorage.BlobContainer, error) {
-	if aiConfig.Storage.Account == "" {
-		storageAccount, err := PromptStorageAccount(ctx, azdContext, aiConfig)
+func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext) (*armstorage.BlobContainer, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	storageAccount, has := azureContext.Resources.FindByType(azure.ResourceTypeStorageAccount)
+	if !has {
+		selctedStorageAccount, err := PromptStorageAccount(ctx, azdContext, azureContext)
 		if err != nil {
 			return nil, err
 		}
 
-		aiConfig.Storage.Account = *storageAccount.Name
+		if match, has := azureContext.Resources.FindById(*selctedStorageAccount.ID); has {
+			storageAccount = match
+		}
 	}
 
 	credential, err := azdContext.Credential()
@@ -616,13 +653,17 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 		return nil, err
 	}
 
-	containersClient, err := armstorage.NewBlobContainersClient(aiConfig.Subscription, credential, armClientOptions)
+	containersClient, err := armstorage.NewBlobContainersClient(storageAccount.SubscriptionID, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[armstorage.BlobContainer]{
-		SelectorOptions: &prompt.PromptSelectOptions{
+	return ext.PromptCustomResource(ctx, ext.CustomResourceOptions[armstorage.BlobContainer]{
+		Selected: func(resource *armstorage.BlobContainer) bool {
+			// TODO: preselect container?
+			return false
+		},
+		SelectorOptions: &ext.SelectOptions{
 			Message:            "Select a blob container",
 			LoadingMessage:     "Loading blob containers...",
 			AllowNewResource:   to.Ptr(true),
@@ -632,7 +673,7 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 		LoadData: func(ctx context.Context) ([]*armstorage.BlobContainer, error) {
 			blobContainers := []*armstorage.BlobContainer{}
 
-			pager := containersClient.NewListPager(aiConfig.ResourceGroup, aiConfig.Storage.Account, nil)
+			pager := containersClient.NewListPager(storageAccount.ResourceGroupName, storageAccount.Name, nil)
 			for pager.More() {
 				pageResponse, err := pager.NextPage(ctx)
 				if err != nil {
@@ -680,7 +721,7 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 							},
 						}
 
-						createResponse, err := containersClient.Create(ctx, aiConfig.ResourceGroup, aiConfig.Storage.Account, containerName, newContainer, nil)
+						createResponse, err := containersClient.Create(ctx, storageAccount.ResourceGroupName, storageAccount.Name, containerName, newContainer, nil)
 						if err != nil {
 							return ux.Error, err
 						}
@@ -700,10 +741,29 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, aiConf
 	})
 }
 
-func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*armsearch.Service, error) {
-	subscription, err := LoadOrPromptSubscription(ctx, azdContext, aiConfig)
-	if err != nil {
+func PromptSearchService(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext) (*armsearch.Service, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	if err := azureContext.EnsureSubscription(ctx); err != nil {
 		return nil, err
+	}
+
+	if err := azureContext.EnsureResourceGroup(ctx); err != nil {
+		return nil, err
+	}
+
+	aiService, has := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccount)
+	if !has {
+		selectedAiAccount, err := PromptAIServiceAccount(ctx, azdContext, azureContext)
+		if err != nil {
+			return nil, err
+		}
+
+		if match, has := azureContext.Resources.FindById(*selectedAiAccount.ID); has {
+			aiService = match
+		}
 	}
 
 	principal, err := azdContext.Principal(ctx)
@@ -723,30 +783,17 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 		return nil
 	})
 
-	searchClient, err := armsearch.NewServicesClient(subscription.Id, credential, armClientOptions)
+	searchClient, err := armsearch.NewServicesClient(azureContext.Scope.SubscriptionId, credential, armClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	if aiConfig == nil {
-		aiConfig = &AiConfig{
-			Subscription: subscription.Id,
-		}
-	}
-
 	var aiSearchService *armsearch.Service
 
-	selectedResource, err := prompt.PromptSubscriptionResource(ctx, subscription, prompt.PromptResourceOptions{
+	selectedResource, err := ext.PromptSubscriptionResource(ctx, azureContext, ext.ResourceOptions{
 		ResourceType:            to.Ptr(azure.ResourceTypeSearchService),
 		ResourceTypeDisplayName: "Azure AI Search",
 		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
-			resourceGroup, err := LoadOrPromptResourceGroup(ctx, azdContext, aiConfig)
-			if err != nil {
-				return nil, err
-			}
-
-			aiConfig.ResourceGroup = resourceGroup.Name
-
 			namePrompt := ux.NewPrompt(&ux.PromptConfig{
 				Message: "Enter the name for the Azure AI Search service",
 			})
@@ -764,7 +811,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
 						searchService := armsearch.Service{
 							Name:     &searchName,
-							Location: &resourceGroup.Location,
+							Location: &azureContext.Scope.Location,
 							Identity: &armsearch.Identity{
 								Type: to.Ptr(armsearch.IdentityTypeSystemAssigned),
 							},
@@ -784,7 +831,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 							},
 						}
 
-						poller, err := searchClient.BeginCreateOrUpdate(ctx, resourceGroup.Name, searchName, searchService, nil, nil)
+						poller, err := searchClient.BeginCreateOrUpdate(ctx, azureContext.Scope.ResourceGroup, searchName, searchService, nil, nil)
 						if err != nil {
 							return ux.Error, common.NewDetailedError("Failed to create Azure AI Search service", err)
 						}
@@ -810,7 +857,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 						err := azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
-								aiConfig.Subscription,
+								aiService.SubscriptionID,
 								*aiSearchService.ID,
 								principal.Oid,
 								azure.RoleSearchIndexDataContributor,
@@ -837,12 +884,17 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 							return ux.Skipped, errors.New("Azure AI Service service creation failed")
 						}
 
-						accountsClient, err := armcognitiveservices.NewAccountsClient(aiConfig.Subscription, credential, armClientOptions)
+						accountsClient, err := armcognitiveservices.NewAccountsClient(aiService.SubscriptionID, credential, armClientOptions)
 						if err != nil {
 							return ux.Error, err
 						}
 
-						aiAccount, err := accountsClient.Get(ctx, aiConfig.ResourceGroup, aiConfig.Service, nil)
+						aiAccount, err := accountsClient.Get(ctx, aiService.ResourceGroupName, aiService.Name, nil)
+						if err != nil {
+							return ux.Error, err
+						}
+
+						aiSearchResource, err := arm.ParseResourceID(*aiSearchService.ID)
 						if err != nil {
 							return ux.Error, err
 						}
@@ -851,7 +903,7 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 						err = azdContext.Invoke(func(rbacClient *azure.EntraIdService) error {
 							err := rbacClient.EnsureRoleAssignment(
 								ctx,
-								aiConfig.Subscription,
+								aiSearchResource.SubscriptionID,
 								*aiSearchService.ID,
 								*aiAccount.Identity.PrincipalID,
 								azure.RoleSearchIndexDataReader,
@@ -908,14 +960,21 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, aiConfig 
 	return aiSearchService, nil
 }
 
-func PromptSearchIndex(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*azsearch.Index, error) {
-	if aiConfig.Search.Service == "" {
-		searchService, err := PromptSearchService(ctx, azdContext, aiConfig)
+func PromptSearchIndex(ctx context.Context, azdContext *ext.Context, azureContext *ext.AzureContext) (*azsearch.Index, error) {
+	if azureContext == nil {
+		azureContext = ext.NewEmptyAzureContext()
+	}
+
+	searchService, has := azureContext.Resources.FindByType(azure.ResourceTypeSearchService)
+	if !has {
+		selectedSearchService, err := PromptSearchService(ctx, azdContext, azureContext)
 		if err != nil {
 			return nil, err
 		}
 
-		aiConfig.Search.Service = *searchService.Name
+		if match, has := azureContext.Resources.FindById(*selectedSearchService.ID); has {
+			searchService = match
+		}
 	}
 
 	credential, err := azdContext.Credential()
@@ -930,14 +989,18 @@ func PromptSearchIndex(ctx context.Context, azdContext *ext.Context, aiConfig *A
 		return nil
 	})
 
-	endpoint := fmt.Sprintf("https://%s.%s", aiConfig.Search.Service, "search.windows.net")
+	endpoint := fmt.Sprintf("https://%s.%s", searchService.Name, "search.windows.net")
 	indexesClient, err := azsearch.NewIndexesClient(endpoint, credential, azClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
-	return prompt.PromptCustomResource(ctx, prompt.PromptCustomResourceOptions[azsearch.Index]{
-		SelectorOptions: &prompt.PromptSelectOptions{
+	return ext.PromptCustomResource(ctx, ext.CustomResourceOptions[azsearch.Index]{
+		Selected: func(resource *azsearch.Index) bool {
+			// TODO: preselect index?
+			return false
+		},
+		SelectorOptions: &ext.SelectOptions{
 			Message:            "Select a search index",
 			LoadingMessage:     "Loading search indexes...",
 			AllowNewResource:   to.Ptr(true),

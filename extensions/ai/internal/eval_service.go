@@ -18,17 +18,12 @@ import (
 
 type EvalService struct {
 	azdContext   *ext.Context
-	aiConfig     *AiConfig
+	aiConfig     *ExtensionConfig
 	openAiClient *azopenai.Client
 	searchClient *azsearchindex.DocumentsClient
 }
 
-func NewEvalService(ctx context.Context, azdContext *ext.Context, aiConfig *AiConfig) (*EvalService, error) {
-	aiAccount, err := PromptAIServiceAccount(ctx, azdContext, aiConfig)
-	if err != nil {
-		return nil, err
-	}
-
+func NewEvalService(ctx context.Context, azdContext *ext.Context, extensionConfig *ExtensionConfig) (*EvalService, error) {
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
@@ -40,22 +35,21 @@ func NewEvalService(ctx context.Context, azdContext *ext.Context, aiConfig *AiCo
 		return nil
 	})
 
-	openAiClient, err := azopenai.NewClient(*aiAccount.Properties.Endpoint, credential, &azopenai.ClientOptions{
+	openAiClient, err := azopenai.NewClient(extensionConfig.Ai.Endpoint, credential, &azopenai.ClientOptions{
 		ClientOptions: *azClientOptions,
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	searchEndpoint := fmt.Sprintf("https://%s.search.windows.net", aiConfig.Search.Service)
-	searchClient, err := azsearchindex.NewDocumentsClient(searchEndpoint, aiConfig.Search.Index, credential, azClientOptions)
+	searchClient, err := azsearchindex.NewDocumentsClient(extensionConfig.Search.Endpoint, extensionConfig.Search.Index, credential, azClientOptions)
 	if err != nil {
 		return nil, err
 	}
 
 	return &EvalService{
 		azdContext:   azdContext,
-		aiConfig:     aiConfig,
+		aiConfig:     extensionConfig,
 		openAiClient: openAiClient,
 		searchClient: searchClient,
 	}, nil

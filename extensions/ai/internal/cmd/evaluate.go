@@ -210,63 +210,79 @@ func runEvaluation(ctx context.Context, testData *internal.EvaluationTestData, o
 		return nil, err
 	}
 
-	aiConfig, err := internal.LoadOrPromptAiConfig(ctx, azdContext)
+	azureContext, err := azdContext.AzureContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if options.ChatCompletionModel == "" && aiConfig.Models.ChatCompletion == "" {
-		chatModel, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+	extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
+	if err != nil {
+		aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
+		if err != nil {
+			return nil, err
+		}
+
+		extensionConfig = &internal.ExtensionConfig{
+			Ai: internal.AiConfig{
+				Service:  *aiAccount.Name,
+				Endpoint: *aiAccount.Properties.Endpoint,
+			},
+		}
+	}
+
+	if options.ChatCompletionModel == "" && extensionConfig.Ai.Models.ChatCompletion == "" {
+		chatModel, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 			Capabilities: []string{"chatCompletion"},
 		})
 		if err != nil {
 			return nil, err
 		}
 
-		aiConfig.Models.ChatCompletion = *chatModel.Name
+		extensionConfig.Ai.Models.ChatCompletion = *chatModel.Name
 	}
 
 	if options.EvaluationType == internal.EvaluationTypeFlow {
-		if options.EmbeddingModel == "" && aiConfig.Models.Embeddings == "" {
-			embeddingModel, err := internal.PromptModelDeployment(ctx, azdContext, aiConfig, &internal.PromptModelDeploymentOptions{
+		if options.EmbeddingModel == "" && extensionConfig.Ai.Models.Embeddings == "" {
+			embeddingModel, err := internal.PromptModelDeployment(ctx, azdContext, azureContext, &internal.PromptModelDeploymentOptions{
 				Capabilities: []string{"embeddings"},
 			})
 			if err != nil {
 				return nil, err
 			}
 
-			aiConfig.Models.Embeddings = *embeddingModel.Name
+			extensionConfig.Ai.Models.Embeddings = *embeddingModel.Name
 		}
 
-		if aiConfig.Search.Service == "" {
-			searchService, err := internal.PromptSearchService(ctx, azdContext, aiConfig)
+		if extensionConfig.Search.Service == "" {
+			searchService, err := internal.PromptSearchService(ctx, azdContext, azureContext)
 			if err != nil {
 				return nil, err
 			}
 
-			aiConfig.Search.Service = *searchService.Name
+			extensionConfig.Search.Service = *searchService.Name
+			extensionConfig.Search.Endpoint = fmt.Sprintf("https://%s.search.windows.net", extensionConfig.Search.Service)
 		}
 
-		if options.IndexName == "" && aiConfig.Search.Index == "" {
-			searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, aiConfig)
+		if options.IndexName == "" && extensionConfig.Search.Index == "" {
+			searchIndex, err := internal.PromptSearchIndex(ctx, azdContext, azureContext)
 			if err != nil {
 				return nil, err
 			}
 
-			aiConfig.Search.Index = *searchIndex.Name
+			extensionConfig.Search.Index = *searchIndex.Name
 		}
 	}
 
 	if options.ChatCompletionModel == "" {
-		options.ChatCompletionModel = aiConfig.Models.ChatCompletion
+		options.ChatCompletionModel = extensionConfig.Ai.Models.ChatCompletion
 	}
 
 	if options.EmbeddingModel == "" {
-		options.EmbeddingModel = aiConfig.Models.Embeddings
+		options.EmbeddingModel = extensionConfig.Ai.Models.Embeddings
 	}
 
 	if options.IndexName == "" {
-		options.IndexName = aiConfig.Search.Index
+		options.IndexName = extensionConfig.Search.Index
 	}
 
 	fmt.Printf("Chat Completion Model: %s\n", color.CyanString(options.ChatCompletionModel))
@@ -274,11 +290,11 @@ func runEvaluation(ctx context.Context, testData *internal.EvaluationTestData, o
 		fmt.Printf("Embedding Model: %s\n", color.CyanString(options.EmbeddingModel))
 	}
 
-	if err := internal.SaveAiConfig(ctx, azdContext, aiConfig); err != nil {
+	if err := internal.SaveExtensionConfig(ctx, azdContext, extensionConfig); err != nil {
 		return nil, err
 	}
 
-	evalService, err := internal.NewEvalService(ctx, azdContext, aiConfig)
+	evalService, err := internal.NewEvalService(ctx, azdContext, extensionConfig)
 	if err != nil {
 		return nil, err
 	}
