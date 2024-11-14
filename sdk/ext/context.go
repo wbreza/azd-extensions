@@ -160,46 +160,53 @@ func (c *Context) Deployment(ctx context.Context) (*azure.ResourceDeployment, er
 
 func (c *Context) AzureContext(ctx context.Context) (*AzureContext, error) {
 	if c.azureContext == nil {
-		azdEnv, err := c.Environment(ctx)
-		if err != nil {
-			if errors.Is(err, ErrEnvironmentNotFound) {
-				return NewEmptyAzureContext(), nil
+		err := c.container.Invoke(func(resourceService *azure.ResourceService) error {
+			azdEnv, err := c.Environment(ctx)
+			if err != nil {
+				if errors.Is(err, ErrEnvironmentNotFound) {
+					return nil
+				}
+
+				return err
 			}
 
-			return nil, err
-		}
+			scope := AzureScope{}
+			resources := NewAzureResourceList(resourceService)
 
-		scope := AzureScope{}
-		resources := AzureResourceList{}
+			if azdEnv != nil {
+				subscriptionId := azdEnv.GetSubscriptionId()
+				resourceGroup := azdEnv.Getenv(environment.ResourceGroupEnvVarName)
+				location := azdEnv.Getenv(environment.LocationEnvVarName)
 
-		if azdEnv != nil {
-			subscriptionId := azdEnv.GetSubscriptionId()
-			resourceGroup := azdEnv.Getenv(environment.ResourceGroupEnvVarName)
-			location := azdEnv.Getenv(environment.LocationEnvVarName)
-
-			scope.SubscriptionId = subscriptionId
-			scope.ResourceGroup = resourceGroup
-			scope.Location = location
-		}
-
-		deployment, err := c.Deployment(ctx)
-		if err != nil {
-			if errors.Is(err, azure.ErrDeploymentNotFound) {
-				return NewAzureContext(scope, &resources), nil
+				scope.SubscriptionId = subscriptionId
+				scope.ResourceGroup = resourceGroup
+				scope.Location = location
 			}
 
-			return nil, err
-		}
+			deployment, err := c.Deployment(ctx)
+			if err != nil {
+				if errors.Is(err, azure.ErrDeploymentNotFound) {
+					c.azureContext = NewAzureContext(scope, resources)
+				}
 
-		if deployment != nil {
-			for _, resource := range deployment.Resources {
-				if err := resources.Add(*resource.ID); err != nil {
-					return nil, err
+				return err
+			}
+
+			if deployment != nil {
+				for _, resource := range deployment.Resources {
+					if err := resources.Add(*resource.ID); err != nil {
+						return err
+					}
 				}
 			}
-		}
 
-		c.azureContext = NewAzureContext(scope, &resources)
+			c.azureContext = NewAzureContext(scope, resources)
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return c.azureContext, nil
@@ -345,7 +352,15 @@ type AzureScope struct {
 }
 
 type AzureResourceList struct {
-	resources []*arm.ResourceID
+	resourceService *azure.ResourceService
+	resources       []*arm.ResourceID
+}
+
+func NewAzureResourceList(resourceService *azure.ResourceService) *AzureResourceList {
+	return &AzureResourceList{
+		resourceService: resourceService,
+		resources:       []*arm.ResourceID{},
+	}
 }
 
 func (arl *AzureResourceList) Add(resourceId string) error {
@@ -374,10 +389,56 @@ func (arl *AzureResourceList) Find(predicate func(resourceId *arm.ResourceID) bo
 	return nil, false
 }
 
+func (arl *AzureResourceList) FindAll(predicate func(resourceId *arm.ResourceID) bool) ([]*arm.ResourceID, bool) {
+	matches := []*arm.ResourceID{}
+
+	for _, resource := range arl.resources {
+		if predicate(resource) {
+			matches = append(matches, resource)
+		}
+	}
+
+	return matches, len(matches) > 0
+}
+
 func (arl *AzureResourceList) FindByType(resourceType azure.ResourceType) (*arm.ResourceID, bool) {
 	return arl.Find(func(resourceId *arm.ResourceID) bool {
 		return strings.EqualFold(resourceId.ResourceType.String(), string(resourceType))
 	})
+}
+
+func (arl *AzureResourceList) FindAllByType(resourceType azure.ResourceType) ([]*arm.ResourceID, bool) {
+	return arl.FindAll(func(resourceId *arm.ResourceID) bool {
+		return strings.EqualFold(resourceId.ResourceType.String(), string(resourceType))
+	})
+}
+
+func (arl *AzureResourceList) FindByTypeAndKind(ctx context.Context, resourceType azure.ResourceType, kinds []string) (*arm.ResourceID, bool) {
+	typeMatches, has := arl.FindAllByType(resourceType)
+	if !has {
+		return nil, false
+	}
+
+	// When no kinds are specified, return the first resource found
+	if len(kinds) == 0 {
+		return typeMatches[0], true
+	}
+
+	// When kinds are specified, check if the resource kind matches
+	for _, typeMatch := range typeMatches {
+		resource, err := arl.resourceService.GetResource(ctx, typeMatch.SubscriptionID, typeMatch.String(), "")
+		if err != nil {
+			return nil, false
+		}
+
+		for _, kind := range kinds {
+			if strings.EqualFold(kind, resource.Kind) {
+				return typeMatch, true
+			}
+		}
+	}
+
+	return nil, false
 }
 
 func (arl *AzureResourceList) FindById(resourceId string) (*arm.ResourceID, bool) {

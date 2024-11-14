@@ -47,18 +47,32 @@ func NewResourceService(
 }
 
 func (rs *ResourceService) GetResource(
-	ctx context.Context, subscriptionId string, resourceId string, apiVersion string) (ResourceExtended, error) {
+	ctx context.Context, subscriptionId string, resourceId string, apiVersion string) (*ResourceExtended, error) {
 	client, err := rs.createResourcesClient(subscriptionId)
 	if err != nil {
-		return ResourceExtended{}, err
+		return nil, err
+	}
+
+	if apiVersion == "" {
+		parsedResource, err := arm.ParseResourceID(resourceId)
+		if err != nil {
+			return nil, fmt.Errorf("parsing resource id: %w", err)
+		}
+
+		resourceTypeApiVersion, err := rs.getApiVersion(ctx, parsedResource)
+		if err != nil {
+			return nil, err
+		}
+
+		apiVersion = resourceTypeApiVersion
 	}
 
 	res, err := client.GetByID(ctx, resourceId, apiVersion, nil)
 	if err != nil {
-		return ResourceExtended{}, fmt.Errorf("getting resource by id: %w", err)
+		return nil, fmt.Errorf("getting resource by id: %w", err)
 	}
 
-	return ResourceExtended{
+	return &ResourceExtended{
 		Resource: Resource{
 			Id:       *res.ID,
 			Name:     *res.Name,
@@ -265,6 +279,26 @@ func (rs *ResourceService) DeleteResourceGroup(ctx context.Context, subscription
 	return nil
 }
 
+func (rs *ResourceService) getApiVersion(ctx context.Context, resourceId *arm.ResourceID) (string, error) {
+	providersClient, err := rs.createProvidersClient(resourceId.SubscriptionID)
+	if err != nil {
+		return "", err
+	}
+
+	providerResponse, err := providersClient.Get(ctx, resourceId.ResourceType.Namespace, nil)
+	if err != nil {
+		return "", fmt.Errorf("getting provider: %w", err)
+	}
+
+	for _, resourceType := range providerResponse.Provider.ResourceTypes {
+		if *resourceType.ResourceType == resourceId.ResourceType.Type {
+			return *resourceType.DefaultAPIVersion, nil
+		}
+	}
+
+	return "", fmt.Errorf("api version not found for resource type %s", resourceId.ResourceType.Type)
+}
+
 func (rs *ResourceService) createResourcesClient(subscriptionId string) (*armresources.Client, error) {
 	client, err := armresources.NewClient(subscriptionId, rs.credential, rs.armClientOptions)
 	if err != nil {
@@ -278,6 +312,15 @@ func (rs *ResourceService) createResourceGroupClient(subscriptionId string) (*ar
 	client, err := armresources.NewResourceGroupsClient(subscriptionId, rs.credential, rs.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (rs *ResourceService) createProvidersClient(subscriptionId string) (*armresources.ProvidersClient, error) {
+	client, err := armresources.NewProvidersClient(subscriptionId, rs.credential, rs.armClientOptions)
+	if err != nil {
+		return nil, fmt.Errorf("creating Providers client: %w", err)
 	}
 
 	return client, nil

@@ -189,7 +189,8 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, azureCo
 
 	var aiService *arm.ResourceID
 
-	aiService, has := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccount)
+	kinds := []string{"OpenAI", "AIServices", "CognitiveServices"}
+	aiService, has := azureContext.Resources.FindByTypeAndKind(ctx, azure.ResourceTypeCognitiveServiceAccount, kinds)
 	if !has {
 		selectedAiService, err := PromptAIServiceAccount(ctx, azdContext, azureContext)
 		if err != nil {
@@ -367,7 +368,8 @@ func PromptModel(ctx context.Context, azdContext *ext.Context, azureContext *ext
 		azureContext = ext.NewEmptyAzureContext()
 	}
 
-	aiService, has := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccount)
+	kinds := []string{"OpenAI", "AIServices", "CognitiveServices"}
+	aiService, has := azureContext.Resources.FindByTypeAndKind(ctx, azure.ResourceTypeCognitiveServiceAccount, kinds)
 	if !has {
 		selectedAiAccount, err := PromptAIServiceAccount(ctx, azdContext, azureContext)
 		if err != nil {
@@ -754,7 +756,8 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, azureCont
 		return nil, err
 	}
 
-	aiService, has := azureContext.Resources.FindByType(azure.ResourceTypeCognitiveServiceAccount)
+	kinds := []string{"OpenAI", "AIServices", "CognitiveServices"}
+	aiService, has := azureContext.Resources.FindByTypeAndKind(ctx, azure.ResourceTypeCognitiveServiceAccount, kinds)
 	if !has {
 		selectedAiAccount, err := PromptAIServiceAccount(ctx, azdContext, azureContext)
 		if err != nil {

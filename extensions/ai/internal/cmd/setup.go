@@ -175,6 +175,17 @@ func newSetupCommand() *cobra.Command {
 						return err
 					}
 
+					whichFilesPrompt := ux.NewPrompt(&ux.PromptConfig{
+						Message:      "Which files should be included?",
+						DefaultValue: "*",
+						Required:     true,
+					})
+
+					userFilePattern, err := whichFilesPrompt.Ask()
+					if err != nil {
+						return err
+					}
+
 					embeddingsOutputPrompt := ux.NewPrompt(&ux.PromptConfig{
 						Message:      "Enter the path for the embeddings output",
 						DefaultValue: "./embeddings",
@@ -193,7 +204,7 @@ func newSetupCommand() *cobra.Command {
 
 					// Combine the current working directory with the relative path
 					absSourcePath := filepath.Join(cwd, userSourcePath)
-					matchingFiles, err := getMatchingFiles(absSourcePath, "*", true)
+					matchingFiles, err := getMatchingFiles(absSourcePath, userFilePattern, true)
 					if err != nil {
 						return err
 					}
@@ -360,6 +371,7 @@ func newSetupCommand() *cobra.Command {
 								Args: []string{
 									"ai", "document", "upload",
 									"--source", userSourcePath,
+									"--pattern", userFilePattern,
 									"--account", extensionConfig.Storage.Account,
 									"--container", extensionConfig.Storage.Container,
 									"--force",
@@ -372,6 +384,7 @@ func newSetupCommand() *cobra.Command {
 								Args: []string{
 									"ai", "embedding", "generate",
 									"--source", userSourcePath,
+									"--pattern", userFilePattern,
 									"--output", userOutputPath,
 									"--service", extensionConfig.Ai.Service,
 									"--embedding-model", extensionConfig.Ai.Models.Embeddings,

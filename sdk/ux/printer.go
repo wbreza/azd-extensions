@@ -3,7 +3,6 @@ package ux
 import (
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"regexp"
@@ -69,8 +68,6 @@ func (p *printer) CursorPosition() CursorPosition {
 		Col: p.size.Cols,
 	}
 
-	log.Printf("Current cursor position: Row: %d, Col: %d\n", cursorPosition.Row, cursorPosition.Col)
-
 	return cursorPosition
 }
 
@@ -132,8 +129,6 @@ func (p *printer) Fprintf(format string, a ...any) {
 
 	p.size.Cols = len(specialTextRegex.ReplaceAllString(p.currentLine, ""))
 	p.size.Rows += lineCount
-
-	log.Print(content)
 }
 
 func (p *printer) Fprintln(a ...any) {
@@ -141,8 +136,6 @@ func (p *printer) Fprintln(a ...any) {
 }
 
 func (p *printer) ClearCanvas() {
-	log.Println("Clearing canvas")
-
 	p.clearLock.Lock()
 	defer p.clearLock.Unlock()
 

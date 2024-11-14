@@ -367,7 +367,10 @@ func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext,
 
 	var existingResource *arm.ResourceID
 	if options.ResourceType != nil {
-		existingResource, _ = AzureContext.Resources.FindByType(*options.ResourceType)
+		match, has := AzureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
+		if has {
+			existingResource = match
+		}
 	}
 
 	if options.Selected == nil {
@@ -377,7 +380,6 @@ func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext,
 			}
 
 			if strings.EqualFold(resource.Id, existingResource.String()) {
-				log.Printf("Selected resource: %v", resource)
 				return true
 			}
 
@@ -497,7 +499,10 @@ func PromptResourceGroupResource(ctx context.Context, AzureContext *AzureContext
 
 	var existingResource *arm.ResourceID
 	if options.ResourceType != nil {
-		existingResource, _ = AzureContext.Resources.FindByType(*options.ResourceType)
+		match, has := AzureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
+		if has {
+			existingResource = match
+		}
 	}
 
 	if options.Selected == nil {
