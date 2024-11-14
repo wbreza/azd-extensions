@@ -17,10 +17,11 @@ import (
 
 // Flag structs for the azd ai document commands
 type UploadFlags struct {
-	Source    string
-	Force     bool
-	Container string
-	Pattern   string
+	Source        string
+	Force         bool
+	AccountName   string
+	ContainerName string
+	Pattern       string
 }
 
 // Command to initialize `azd ai document` command group
@@ -62,10 +63,6 @@ func newUploadCommand() *cobra.Command {
 				return err
 			}
 
-			if flags.Pattern == "" {
-				flags.Pattern = "*"
-			}
-
 			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
 			if err != nil {
 				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
@@ -81,8 +78,16 @@ func newUploadCommand() *cobra.Command {
 				}
 			}
 
-			if err != nil {
-				return err
+			if flags.Pattern == "" {
+				flags.Pattern = "*"
+			}
+
+			if flags.AccountName != "" {
+				extensionConfig.Storage.Account = flags.AccountName
+			}
+
+			if flags.ContainerName != "" {
+				extensionConfig.Storage.Container = flags.ContainerName
 			}
 
 			if extensionConfig.Storage.Account == "" {
@@ -95,8 +100,8 @@ func newUploadCommand() *cobra.Command {
 				extensionConfig.Storage.Endpoint = *storageAccount.Properties.PrimaryEndpoints.Blob
 			}
 
-			if flags.Container != "" {
-				extensionConfig.Storage.Container = flags.Container
+			if flags.ContainerName != "" {
+				extensionConfig.Storage.Container = flags.ContainerName
 			}
 
 			if extensionConfig.Storage.Container == "" {
@@ -188,7 +193,8 @@ func newUploadCommand() *cobra.Command {
 
 	// Define flags for `upload` command
 	uploadCmd.Flags().StringVar(&flags.Source, "source", "", "Path to the local file or directory to upload (required)")
-	uploadCmd.Flags().StringVar(&flags.Container, "container", "", "Azure Blob Storage container name to upload to (required)")
+	uploadCmd.Flags().StringVar(&flags.AccountName, "account", "", "Azure Blob Storage account name to upload to")
+	uploadCmd.Flags().StringVar(&flags.ContainerName, "container", "", "Azure Blob Storage container name to upload to")
 	uploadCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file type pattern to upload (e.g., '*.pdf', '*.txt')")
 	uploadCmd.Flags().BoolVarP(&flags.Force, "force", "f", false, "Upload without confirmation")
 

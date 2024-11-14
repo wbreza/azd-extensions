@@ -19,11 +19,13 @@ import (
 
 // Flag structs for the azd ai embedding commands
 type GenerateFlags struct {
-	Source  string
-	Model   string
-	Output  string
-	Pattern string
-	Force   bool
+	Source              string
+	ServiceName         string
+	ChatCompletionModel string
+	EmbeddingModel      string
+	Output              string
+	Pattern             string
+	Force               bool
 }
 
 type IngestFlags struct {
@@ -88,8 +90,8 @@ func newGenerateCommand() *cobra.Command {
 				}
 			}
 
-			if flags.Model != "" {
-				extensionConfig.Ai.Models.Embeddings = flags.Model
+			if flags.ChatCompletionModel != "" {
+				extensionConfig.Ai.Models.Embeddings = flags.ChatCompletionModel
 			}
 
 			if flags.Output == "" {
@@ -98,6 +100,18 @@ func newGenerateCommand() *cobra.Command {
 
 			if flags.Pattern == "" {
 				flags.Pattern = "*"
+			}
+
+			if flags.ServiceName != "" {
+				extensionConfig.Ai.Service = flags.ServiceName
+			}
+
+			if flags.ChatCompletionModel != "" {
+				extensionConfig.Ai.Models.ChatCompletion = flags.ChatCompletionModel
+			}
+
+			if flags.EmbeddingModel != "" {
+				extensionConfig.Ai.Models.Embeddings = flags.EmbeddingModel
 			}
 
 			if extensionConfig.Ai.Models.ChatCompletion == "" {
@@ -216,7 +230,9 @@ func newGenerateCommand() *cobra.Command {
 
 	// Define flags for `generate` command
 	generateCmd.Flags().StringVar(&flags.Source, "source", "", "Path to the local file or directory to upload (required)")
-	generateCmd.Flags().StringVar(&flags.Model, "model", "", "Model name to use for embedding (e.g., 'embedding-ada-002') (required)")
+	generateCmd.Flags().StringVar(&flags.ServiceName, "service", "", "Azure AI service name")
+	generateCmd.Flags().StringVar(&flags.EmbeddingModel, "embedding-model", "", "Model name to use for embedding (e.g., 'text-embedding-ada-002')")
+	generateCmd.Flags().StringVar(&flags.ChatCompletionModel, "chat-completion-model", "", "Model name to use for summary generation (e.g., 'gpt-4')")
 	generateCmd.Flags().StringVar(&flags.Output, "output", "", "Path or container to save generated embeddings")
 	generateCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file types to process (e.g., '.pdf', '.txt')")
 	generateCmd.Flags().BoolVarP(&flags.Force, "force", "f", false, "Generate embeddings without confirmation")
@@ -234,8 +250,8 @@ func newIngestCommand() *cobra.Command {
 		Short: "Ingest embeddings into a vector store",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			header := output.CommandHeader{
-				Title:       "Generate text embeddings for documents (azd ai embedding generate)",
-				Description: "Generate text embeddings for documents using text embedding AI model",
+				Title:       "Ingest text embeddings into a vector store (azd ai embedding ingest)",
+				Description: "Ingests text embeddings into the specified vector store such as Azure AI search index",
 			}
 			header.Print()
 
@@ -271,6 +287,10 @@ func newIngestCommand() *cobra.Command {
 
 			if flags.ServiceName != "" {
 				extensionConfig.Search.Service = flags.ServiceName
+			}
+
+			if flags.IndexName != "" {
+				extensionConfig.Search.Index = flags.IndexName
 			}
 
 			if extensionConfig.Search.Service == "" {
@@ -375,10 +395,10 @@ func newIngestCommand() *cobra.Command {
 	}
 
 	// Define flags for `ingest` command
-	ingestCmd.Flags().StringVar(&flags.ServiceName, "service-name", "", "Azure Cognitive Search service name")
-	ingestCmd.Flags().StringVar(&flags.IndexName, "index-name", "", "Target vector store or index name for ingestion")
-	ingestCmd.Flags().StringVar(&flags.Source, "source", "", "Source of the embeddings (e.g., directory or container) (required)")
+	ingestCmd.Flags().StringVar(&flags.Source, "source", "", "Source of the embeddings (e.g., local file system path)")
 	ingestCmd.Flags().StringVarP(&flags.Pattern, "pattern", "p", "", "Specify file types to process (e.g., '.pdf', '.txt')")
+	ingestCmd.Flags().StringVar(&flags.ServiceName, "service", "", "Azure Cognitive Search service name")
+	ingestCmd.Flags().StringVar(&flags.IndexName, "index", "", "Azure AI Search index name")
 	ingestCmd.Flags().BoolVarP(&flags.Force, "force", "f", false, "Ingest embeddings without confirmation")
 
 	_ = ingestCmd.MarkFlagRequired("source")

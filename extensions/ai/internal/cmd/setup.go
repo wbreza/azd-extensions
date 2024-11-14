@@ -12,10 +12,22 @@ import (
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
 	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/common/permissions"
+	"github.com/wbreza/azd-extensions/sdk/core/azd"
+	"github.com/wbreza/azd-extensions/sdk/core/contracts"
+	"github.com/wbreza/azd-extensions/sdk/core/project"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
 	"github.com/wbreza/azd-extensions/sdk/ux"
 )
+
+var defaultUpWorkflow = &contracts.Workflow{
+	Name: "up",
+	Steps: []*contracts.Step{
+		{AzdCommand: contracts.Command{Args: []string{"package", "--all"}}},
+		{AzdCommand: contracts.Command{Args: []string{"provision"}}},
+		{AzdCommand: contracts.Command{Args: []string{"deploy", "--all"}}},
+	},
+}
 
 // Flag structs for the azd ai document commands
 type SetupFlags struct {
@@ -225,7 +237,8 @@ func newSetupCommand() *cobra.Command {
 					fmt.Println()
 
 					readyConfirm := ux.NewConfirm(&ux.ConfirmConfig{
-						Message:      "Are you ready to proceed?",
+						Message:      "Do you want to run this process now?",
+						HelpMessage:  "This will upload documents, generate text embeddings, and populate the search index.",
 						DefaultValue: to.Ptr(true),
 					})
 
@@ -238,78 +251,162 @@ func newSetupCommand() *cobra.Command {
 						return err
 					}
 
-					if userReadyConfirmed == nil || !*userReadyConfirmed {
-						return ux.ErrCancelled
-					}
+					if *userReadyConfirmed {
 
-					docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
-					if err != nil {
-						return err
-					}
+						docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
+						if err != nil {
+							return err
+						}
 
-					err = ux.NewTaskList(nil).
-						AddTask(ux.TaskOptions{
-							Title: "Uploading documents",
-							Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-								setProgress(fmt.Sprintf("%d/%d", 0, len(matchingFiles)))
+						err = ux.NewTaskList(nil).
+							AddTask(ux.TaskOptions{
+								Title: "Uploading documents",
+								Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
+									setProgress(fmt.Sprintf("%d/%d", 0, len(matchingFiles)))
 
-								for index, file := range matchingFiles {
-									relativePath, err := filepath.Rel(cwd, file)
+									for index, file := range matchingFiles {
+										relativePath, err := filepath.Rel(cwd, file)
+										if err != nil {
+											return ux.Error, err
+										}
+
+										if docPrepService.Upload(ctx, file, relativePath); err != nil {
+											return ux.Error, common.NewDetailedError("Failed to upload document", err)
+										}
+
+										setProgress(fmt.Sprintf("%d/%d", index+1, len(matchingFiles)))
+									}
+
+									return ux.Success, nil
+								},
+							}).
+							AddTask(ux.TaskOptions{
+								Title: "Generating text embeddings",
+								Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
+									setProgress(fmt.Sprintf("%d/%d", 0, len(matchingFiles)))
+
+									for index, file := range matchingFiles {
+										if _, err := docPrepService.GenerateEmbedding(ctx, file, absOutputPath); err != nil {
+											return ux.Error, common.NewDetailedError("Failed generating embedding", err)
+										}
+
+										setProgress(fmt.Sprintf("%d/%d", index+1, len(matchingFiles)))
+									}
+
+									return ux.Success, nil
+								},
+							}).
+							AddTask(ux.TaskOptions{
+								Title: "Populating search index",
+								Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
+									embeddingDocuments, err := getMatchingFiles(absOutputPath, "*.json", true)
 									if err != nil {
-										return ux.Error, err
+										return ux.Error, common.NewDetailedError("Failed fetching embedding documents", err)
 									}
 
-									if docPrepService.Upload(ctx, file, relativePath); err != nil {
-										return ux.Error, common.NewDetailedError("Failed to upload document", err)
+									setProgress(fmt.Sprintf("%d/%d", 0, len(embeddingDocuments)))
+
+									for index, file := range embeddingDocuments {
+										if docPrepService.IngestEmbedding(ctx, file); err != nil {
+											return ux.Error, common.NewDetailedError("Failed ingesting embedding", err)
+										}
+
+										setProgress(fmt.Sprintf("%d/%d", index+1, len(embeddingDocuments)))
 									}
 
-									setProgress(fmt.Sprintf("%d/%d", index+1, len(matchingFiles)))
-								}
+									return ux.Success, nil
+								},
+							}).
+							Run()
 
-								return ux.Success, nil
-							},
-						}).
-						AddTask(ux.TaskOptions{
-							Title: "Generating text embeddings",
-							Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-								setProgress(fmt.Sprintf("%d/%d", 0, len(matchingFiles)))
+						if err != nil {
+							return err
+						}
+					}
 
-								for index, file := range matchingFiles {
-									if _, err := docPrepService.GenerateEmbedding(ctx, file, absOutputPath); err != nil {
-										return ux.Error, common.NewDetailedError("Failed generating embedding", err)
-									}
+					updateWorkflowConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+						Message:      "Would you like to run this process automatically during `azd up`?",
+						DefaultValue: to.Ptr(true),
+					})
 
-									setProgress(fmt.Sprintf("%d/%d", index+1, len(matchingFiles)))
-								}
-
-								return ux.Success, nil
-							},
-						}).
-						AddTask(ux.TaskOptions{
-							Title: "Populating search index",
-							Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-								embeddingDocuments, err := getMatchingFiles(absOutputPath, "*.json", true)
-								if err != nil {
-									return ux.Error, common.NewDetailedError("Failed fetching embedding documents", err)
-								}
-
-								setProgress(fmt.Sprintf("%d/%d", 0, len(embeddingDocuments)))
-
-								for index, file := range embeddingDocuments {
-									if docPrepService.IngestEmbedding(ctx, file); err != nil {
-										return ux.Error, common.NewDetailedError("Failed ingesting embedding", err)
-									}
-
-									setProgress(fmt.Sprintf("%d/%d", index+1, len(embeddingDocuments)))
-								}
-
-								return ux.Success, nil
-							},
-						}).
-						Run()
-
+					userUpdateWorkflowConfirmed, err := updateWorkflowConfirm.Ask()
 					if err != nil {
 						return err
+					}
+
+					if *userUpdateWorkflowConfirmed {
+						azdProject, err := azdContext.Project(ctx)
+						if err != nil {
+							return err
+						}
+
+						upWorkflow, has := azdProject.Workflows["up"]
+						if !has {
+							upWorkflow = defaultUpWorkflow
+						}
+
+						steps := []*contracts.Step{}
+						for _, step := range upWorkflow.Steps {
+							if step.AzdCommand.Args[0] == "ai" {
+								continue
+							}
+
+							// Append non AI steps
+							steps = append(steps, step)
+						}
+
+						steps = append(steps, &contracts.Step{
+							AzdCommand: contracts.Command{
+								Args: []string{
+									"ai", "document", "upload",
+									"--source", userSourcePath,
+									"--account", extensionConfig.Storage.Account,
+									"--container", extensionConfig.Storage.Container,
+									"--force",
+								},
+							},
+						})
+
+						steps = append(steps, &contracts.Step{
+							AzdCommand: contracts.Command{
+								Args: []string{
+									"ai", "embedding", "generate",
+									"--source", userSourcePath,
+									"--output", userOutputPath,
+									"--service", extensionConfig.Ai.Service,
+									"--embedding-model", extensionConfig.Ai.Models.Embeddings,
+									"--chat-completion-model", extensionConfig.Ai.Models.ChatCompletion,
+									"--force",
+								},
+							},
+						})
+
+						steps = append(steps, &contracts.Step{
+							AzdCommand: contracts.Command{
+								Args: []string{
+									"ai", "embedding", "ingest",
+									"--source", userOutputPath,
+									"--service", extensionConfig.Search.Service,
+									"--index", extensionConfig.Search.Index,
+									"--force",
+								},
+							},
+						})
+
+						upWorkflow.Steps = steps
+						if azdProject.Workflows == nil {
+							azdProject.Workflows = make(contracts.WorkflowMap)
+						}
+						azdProject.Workflows["up"] = upWorkflow
+
+						azdCtx, err := azd.NewContext()
+						if err != nil {
+							return err
+						}
+
+						if err := project.Save(ctx, azdProject, azdCtx.ProjectPath()); err != nil {
+							return err
+						}
 					}
 				}
 			}

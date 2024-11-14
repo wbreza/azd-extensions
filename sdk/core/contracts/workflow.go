@@ -125,6 +125,10 @@ type Command struct {
 	Args []string `yaml:"args,omitempty"`
 }
 
+func (c Command) MarshalYAML() (interface{}, error) {
+	return strings.Join(c.Args, " "), nil
+}
+
 // UnmarshalYAML will unmarshal the Command from YAML.
 // In command YAML the command can be specified as a simple string or a more verbose map/struct style
 func (c *Command) UnmarshalYAML(unmarshal func(interface{}) error) error {
