@@ -164,12 +164,12 @@ func PromptSubscription(ctx context.Context, selectorOptions *SelectOptions) (*a
 }
 
 // PromptLocation prompts the user to select an Azure location.
-func PromptLocation(ctx context.Context, AzureContext *AzureContext, selectorOptions *SelectOptions) (*azure.Location, error) {
-	if AzureContext == nil {
-		AzureContext = NewEmptyAzureContext()
+func PromptLocation(ctx context.Context, azureContext *AzureContext, selectorOptions *SelectOptions) (*azure.Location, error) {
+	if azureContext == nil {
+		azureContext = NewEmptyAzureContext()
 	}
 
-	if err := AzureContext.EnsureSubscription(ctx); err != nil {
+	if err := azureContext.EnsureSubscription(ctx); err != nil {
 		return nil, err
 	}
 
@@ -216,7 +216,7 @@ func PromptLocation(ctx context.Context, AzureContext *AzureContext, selectorOpt
 		SelectorOptions: mergedOptions,
 		LoadData: func(ctx context.Context) ([]*azure.Location, error) {
 			subscriptionService := azure.NewSubscriptionsService(credential, nil)
-			locationList, err := subscriptionService.ListSubscriptionLocations(ctx, AzureContext.Scope.SubscriptionId, AzureContext.Scope.TenantId)
+			locationList, err := subscriptionService.ListSubscriptionLocations(ctx, azureContext.Scope.SubscriptionId, azureContext.Scope.TenantId)
 			if err != nil {
 				return nil, err
 			}
@@ -242,12 +242,12 @@ func PromptLocation(ctx context.Context, AzureContext *AzureContext, selectorOpt
 }
 
 // PromptResourceGroup prompts the user to select an Azure resource group.
-func PromptResourceGroup(ctx context.Context, AzureContext *AzureContext, options *ResourceGroupOptions) (*azure.ResourceGroup, error) {
-	if AzureContext == nil {
-		AzureContext = NewEmptyAzureContext()
+func PromptResourceGroup(ctx context.Context, azureContext *AzureContext, options *ResourceGroupOptions) (*azure.ResourceGroup, error) {
+	if azureContext == nil {
+		azureContext = NewEmptyAzureContext()
 	}
 
-	if err := AzureContext.EnsureSubscription(ctx); err != nil {
+	if err := azureContext.EnsureSubscription(ctx); err != nil {
 		return nil, err
 	}
 
@@ -288,7 +288,7 @@ func PromptResourceGroup(ctx context.Context, AzureContext *AzureContext, option
 	return PromptCustomResource(ctx, CustomResourceOptions[azure.ResourceGroup]{
 		SelectorOptions: mergedSelectorOptions,
 		LoadData: func(ctx context.Context) ([]*azure.ResourceGroup, error) {
-			resourceGroupList, err := resourceService.ListResourceGroup(ctx, AzureContext.Scope.SubscriptionId, nil)
+			resourceGroupList, err := resourceService.ListResourceGroup(ctx, azureContext.Scope.SubscriptionId, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -308,7 +308,7 @@ func PromptResourceGroup(ctx context.Context, AzureContext *AzureContext, option
 			return fmt.Sprintf("%s %s", resourceGroup.Name, color.HiBlackString("(Location: %s)", resourceGroup.Location)), nil
 		},
 		CreateResource: func(ctx context.Context) (*azure.ResourceGroup, error) {
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message: "Enter the name for the resource group",
 			})
 
@@ -317,7 +317,7 @@ func PromptResourceGroup(ctx context.Context, AzureContext *AzureContext, option
 				return nil, err
 			}
 
-			if err := AzureContext.EnsureLocation(ctx); err != nil {
+			if err := azureContext.EnsureLocation(ctx); err != nil {
 				return nil, err
 			}
 
@@ -329,7 +329,7 @@ func PromptResourceGroup(ctx context.Context, AzureContext *AzureContext, option
 				AddTask(ux.TaskOptions{
 					Title: taskName,
 					Action: func(setProgress ux.SetProgressFunc) (ux.TaskState, error) {
-						newResourceGroup, err := resourceService.CreateOrUpdateResourceGroup(ctx, AzureContext.Scope.SubscriptionId, resourceGroupName, AzureContext.Scope.Location, nil)
+						newResourceGroup, err := resourceService.CreateOrUpdateResourceGroup(ctx, azureContext.Scope.SubscriptionId, resourceGroupName, azureContext.Scope.Location, nil)
 						if err != nil {
 							return ux.Error, err
 						}
@@ -350,12 +350,12 @@ func PromptResourceGroup(ctx context.Context, AzureContext *AzureContext, option
 }
 
 // PromptSubscriptionResource prompts the user to select an Azure subscription resource.
-func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext, options ResourceOptions) (*azure.ResourceExtended, error) {
-	if AzureContext == nil {
-		AzureContext = NewEmptyAzureContext()
+func PromptSubscriptionResource(ctx context.Context, azureContext *AzureContext, options ResourceOptions) (*azure.ResourceExtended, error) {
+	if azureContext == nil {
+		azureContext = NewEmptyAzureContext()
 	}
 
-	if err := AzureContext.EnsureSubscription(ctx); err != nil {
+	if err := azureContext.EnsureSubscription(ctx); err != nil {
 		return nil, err
 	}
 
@@ -367,7 +367,7 @@ func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext,
 
 	var existingResource *arm.ResourceID
 	if options.ResourceType != nil {
-		match, has := AzureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
+		match, has := azureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
 		if has {
 			existingResource = match
 		}
@@ -430,7 +430,7 @@ func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext,
 			}
 
 			resourceService := azure.NewResourceService(credential, nil)
-			resourceList, err := resourceService.ListSubscriptionResources(ctx, AzureContext.Scope.SubscriptionId, resourceListOptions)
+			resourceList, err := resourceService.ListSubscriptionResources(ctx, azureContext.Scope.SubscriptionId, resourceListOptions)
 			if err != nil {
 				return nil, err
 			}
@@ -470,7 +470,7 @@ func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext,
 		return nil, err
 	}
 
-	if err := AzureContext.Resources.Add(resource.Id); err != nil {
+	if err := azureContext.Resources.Add(resource.Id); err != nil {
 		return nil, err
 	}
 
@@ -478,16 +478,12 @@ func PromptSubscriptionResource(ctx context.Context, AzureContext *AzureContext,
 }
 
 // PromptResourceGroupResource prompts the user to select an Azure resource group resource.
-func PromptResourceGroupResource(ctx context.Context, AzureContext *AzureContext, options ResourceOptions) (*azure.ResourceExtended, error) {
-	if AzureContext == nil {
-		AzureContext = NewEmptyAzureContext()
+func PromptResourceGroupResource(ctx context.Context, azureContext *AzureContext, options ResourceOptions) (*azure.ResourceExtended, error) {
+	if azureContext == nil {
+		azureContext = NewEmptyAzureContext()
 	}
 
-	if err := AzureContext.EnsureSubscription(ctx); err != nil {
-		return nil, err
-	}
-
-	if err := AzureContext.EnsureResourceGroup(ctx); err != nil {
+	if err := azureContext.EnsureResourceGroup(ctx); err != nil {
 		return nil, err
 	}
 
@@ -499,7 +495,7 @@ func PromptResourceGroupResource(ctx context.Context, AzureContext *AzureContext
 
 	var existingResource *arm.ResourceID
 	if options.ResourceType != nil {
-		match, has := AzureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
+		match, has := azureContext.Resources.FindByTypeAndKind(ctx, *options.ResourceType, options.Kinds)
 		if has {
 			existingResource = match
 		}
@@ -559,7 +555,7 @@ func PromptResourceGroupResource(ctx context.Context, AzureContext *AzureContext
 			}
 
 			resourceService := azure.NewResourceService(credential, nil)
-			resourceList, err := resourceService.ListResourceGroupResources(ctx, AzureContext.Scope.SubscriptionId, AzureContext.Scope.ResourceGroup, resourceListOptions)
+			resourceList, err := resourceService.ListResourceGroupResources(ctx, azureContext.Scope.SubscriptionId, azureContext.Scope.ResourceGroup, resourceListOptions)
 			if err != nil {
 				return nil, err
 			}
@@ -593,7 +589,7 @@ func PromptResourceGroupResource(ctx context.Context, AzureContext *AzureContext
 		return nil, err
 	}
 
-	if err := AzureContext.Resources.Add(resource.Id); err != nil {
+	if err := azureContext.Resources.Add(resource.Id); err != nil {
 		return nil, err
 	}
 
@@ -633,7 +629,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 		allowNewResource = true
 		selectedIndex = ux.Ptr(0)
 	} else {
-		loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+		loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 			Text: options.SelectorOptions.LoadingMessage,
 		})
 
@@ -704,7 +700,7 @@ func PromptCustomResource[T any](ctx context.Context, options CustomResourceOpti
 			}
 		}
 
-		resourceSelector := ux.NewSelect(&ux.SelectConfig{
+		resourceSelector := ux.NewSelect(&ux.SelectOptions{
 			Message:        mergedSelectorOptions.Message,
 			HelpMessage:    mergedSelectorOptions.HelpMessage,
 			DisplayCount:   mergedSelectorOptions.DisplayCount,

@@ -10,7 +10,7 @@ import (
 func WaitForDebugger() {
 	if _, has := os.LookupEnv("AZD_DEBUG"); has {
 		for {
-			debugConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+			debugConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 				Message:      fmt.Sprintf("Debugger Ready? (pid: %d)", os.Getpid()),
 				DefaultValue: ux.Ptr(true),
 			})

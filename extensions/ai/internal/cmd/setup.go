@@ -6,10 +6,13 @@ import (
 	"os"
 	"path/filepath"
 
+	"slices"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
+	"github.com/wbreza/azd-extensions/extensions/ai/internal/docprep"
 	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/common/permissions"
 	"github.com/wbreza/azd-extensions/sdk/core/azd"
@@ -77,7 +80,7 @@ func newSetupCommand() *cobra.Command {
 			}
 
 			if extensionConfig.Ai.Models.ChatCompletion == "" {
-				chatConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+				chatConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 					Message:      "Would you like to enable chat for your AI project?",
 					DefaultValue: to.Ptr(true),
 				})
@@ -102,7 +105,7 @@ func newSetupCommand() *cobra.Command {
 				}
 			}
 
-			customDataConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+			customDataConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 				Message:      "Would you like to load custom data for your AI project?",
 				DefaultValue: to.Ptr(true),
 			})
@@ -153,7 +156,7 @@ func newSetupCommand() *cobra.Command {
 					extensionConfig.Search.Index = *searchIndex.Name
 				}
 
-				prepDataConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+				prepDataConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 					Message:      "Would you like to prep documents for your AI project?",
 					DefaultValue: to.Ptr(true),
 				})
@@ -164,7 +167,7 @@ func newSetupCommand() *cobra.Command {
 				}
 
 				if *userPrepDataConfirmed {
-					sourcePrompt := ux.NewPrompt(&ux.PromptConfig{
+					sourcePrompt := ux.NewPrompt(&ux.PromptOptions{
 						Message:      "Enter the path to the source data",
 						DefaultValue: "./data",
 						Required:     true,
@@ -175,7 +178,7 @@ func newSetupCommand() *cobra.Command {
 						return err
 					}
 
-					whichFilesPrompt := ux.NewPrompt(&ux.PromptConfig{
+					whichFilesPrompt := ux.NewPrompt(&ux.PromptOptions{
 						Message:      "Which files should be included?",
 						DefaultValue: "*",
 						Required:     true,
@@ -186,7 +189,7 @@ func newSetupCommand() *cobra.Command {
 						return err
 					}
 
-					embeddingsOutputPrompt := ux.NewPrompt(&ux.PromptConfig{
+					embeddingsOutputPrompt := ux.NewPrompt(&ux.PromptOptions{
 						Message:      "Enter the path for the embeddings output",
 						DefaultValue: "./embeddings",
 						Required:     true,
@@ -247,7 +250,7 @@ func newSetupCommand() *cobra.Command {
 					fmt.Printf("Embeddings Output: %s\n", color.CyanString(absOutputPath))
 					fmt.Println()
 
-					readyConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+					readyConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 						Message:      "Do you want to run this process now?",
 						HelpMessage:  "This will upload documents, generate text embeddings, and populate the search index.",
 						DefaultValue: to.Ptr(true),
@@ -264,7 +267,7 @@ func newSetupCommand() *cobra.Command {
 
 					if *userReadyConfirmed {
 
-						docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
+						docPrepService, err := docprep.NewDocumentPrepService(ctx, azdContext, extensionConfig)
 						if err != nil {
 							return err
 						}
@@ -335,7 +338,7 @@ func newSetupCommand() *cobra.Command {
 						}
 					}
 
-					updateWorkflowConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+					updateWorkflowConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 						Message:      "Would you like to run this process automatically during `azd up`?",
 						DefaultValue: to.Ptr(true),
 					})
@@ -356,57 +359,71 @@ func newSetupCommand() *cobra.Command {
 							upWorkflow = defaultUpWorkflow
 						}
 
-						steps := []*contracts.Step{}
+						beforeSteps := []*contracts.Step{}
+						afterSteps := []*contracts.Step{}
+						aiSteps := []*contracts.Step{}
+						foundProvision := false
+
 						for _, step := range upWorkflow.Steps {
 							if step.AzdCommand.Args[0] == "ai" {
 								continue
 							}
 
-							// Append non AI steps
-							steps = append(steps, step)
+							if foundProvision {
+								afterSteps = append(afterSteps, step)
+							} else {
+								beforeSteps = append(beforeSteps, step)
+							}
+
+							if slices.Contains(step.AzdCommand.Args, "provision") {
+								foundProvision = true
+							}
 						}
 
-						steps = append(steps, &contracts.Step{
+						aiSteps = append(aiSteps, &contracts.Step{
 							AzdCommand: contracts.Command{
 								Args: []string{
 									"ai", "document", "upload",
 									"--source", userSourcePath,
 									"--pattern", userFilePattern,
-									"--account", extensionConfig.Storage.Account,
-									"--container", extensionConfig.Storage.Container,
+									// "--account", extensionConfig.Storage.Account,
+									// "--container", extensionConfig.Storage.Container,
 									"--force",
 								},
 							},
 						})
 
-						steps = append(steps, &contracts.Step{
+						aiSteps = append(aiSteps, &contracts.Step{
 							AzdCommand: contracts.Command{
 								Args: []string{
 									"ai", "embedding", "generate",
 									"--source", userSourcePath,
 									"--pattern", userFilePattern,
 									"--output", userOutputPath,
-									"--service", extensionConfig.Ai.Service,
-									"--embedding-model", extensionConfig.Ai.Models.Embeddings,
-									"--chat-completion-model", extensionConfig.Ai.Models.ChatCompletion,
+									// "--service", extensionConfig.Ai.Service,
+									// "--embedding-model", extensionConfig.Ai.Models.Embeddings,
+									// "--chat-completion-model", extensionConfig.Ai.Models.ChatCompletion,
 									"--force",
 								},
 							},
 						})
 
-						steps = append(steps, &contracts.Step{
+						aiSteps = append(aiSteps, &contracts.Step{
 							AzdCommand: contracts.Command{
 								Args: []string{
 									"ai", "embedding", "ingest",
 									"--source", userOutputPath,
-									"--service", extensionConfig.Search.Service,
-									"--index", extensionConfig.Search.Index,
+									// "--service", extensionConfig.Search.Service,
+									// "--index", extensionConfig.Search.Index,
 									"--force",
 								},
 							},
 						})
 
-						upWorkflow.Steps = steps
+						allSteps := append(beforeSteps, aiSteps...)
+						allSteps = append(allSteps, afterSteps...)
+
+						upWorkflow.Steps = allSteps
 						if azdProject.Workflows == nil {
 							azdProject.Workflows = make(contracts.WorkflowMap)
 						}
@@ -424,6 +441,7 @@ func newSetupCommand() *cobra.Command {
 				}
 			}
 
+			fmt.Println()
 			color.Green("SUCCESS: AI project setup completed successfully")
 			fmt.Printf("Run %s to start chatting with your AI model\n", color.CyanString("azd ai chat"))
 

@@ -14,7 +14,7 @@ import (
 	"github.com/fatih/color"
 )
 
-type SelectConfig struct {
+type SelectOptions struct {
 	// The writer to use for output (default: os.Stdout)
 	Writer io.Writer
 	// The reader to use for input (default: os.Stdin)
@@ -37,7 +37,7 @@ type SelectConfig struct {
 	EnableFiltering *bool
 }
 
-var DefaultSelectConfig SelectConfig = SelectConfig{
+var DefaultSelectOptions SelectOptions = SelectOptions{
 	Writer:          os.Stdout,
 	Reader:          os.Stdin,
 	SelectedIndex:   Ptr(0),
@@ -51,58 +51,58 @@ type Select struct {
 	cursor internal.Cursor
 	canvas Canvas
 
-	config             *SelectConfig
+	options            *SelectOptions
 	selectedIndex      *int
 	showHelp           bool
 	complete           bool
 	filter             string
-	options            []*selectOption
-	filteredOptions    []*selectOption
+	choices            []*selectChoice
+	filteredChoices    []*selectChoice
 	hasValidationError bool
 	validationMessage  string
 	cancelled          bool
 	cursorPosition     *CursorPosition
 }
 
-type selectOption struct {
+type selectChoice struct {
 	Index int
 	Value string
 }
 
-func NewSelect(config *SelectConfig) *Select {
-	mergedConfig := SelectConfig{}
-	if err := mergo.Merge(&mergedConfig, config, mergo.WithoutDereference); err != nil {
+func NewSelect(options *SelectOptions) *Select {
+	mergedOptions := SelectOptions{}
+	if err := mergo.Merge(&mergedOptions, options, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	if err := mergo.Merge(&mergedConfig, DefaultSelectConfig, mergo.WithoutDereference); err != nil {
+	if err := mergo.Merge(&mergedOptions, DefaultSelectOptions, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	selectOptions := make([]*selectOption, len(mergedConfig.Allowed))
-	for index, value := range mergedConfig.Allowed {
-		selectOptions[index] = &selectOption{
+	selectOptions := make([]*selectChoice, len(mergedOptions.Allowed))
+	for index, value := range mergedOptions.Allowed {
+		selectOptions[index] = &selectChoice{
 			Index: index,
 			Value: value,
 		}
 	}
 
 	// Define default hint message
-	if mergedConfig.Hint == "" {
+	if mergedOptions.Hint == "" {
 		hintParts := []string{"Use arrows to move"}
-		if *mergedConfig.EnableFiltering {
+		if *mergedOptions.EnableFiltering {
 			hintParts = append(hintParts, "type to filter")
 		}
 
-		mergedConfig.Hint = fmt.Sprintf("[%s]", strings.Join(hintParts, ", "))
+		mergedOptions.Hint = fmt.Sprintf("[%s]", strings.Join(hintParts, ", "))
 	}
 
 	return &Select{
 		input:           internal.NewInput(),
-		cursor:          internal.NewCursor(mergedConfig.Writer),
-		config:          &mergedConfig,
-		filteredOptions: selectOptions,
-		options:         selectOptions,
+		cursor:          internal.NewCursor(mergedOptions.Writer),
+		options:         &mergedOptions,
+		filteredChoices: selectOptions,
+		choices:         selectOptions,
 	}
 }
 
@@ -113,7 +113,7 @@ func (p *Select) WithCanvas(canvas Canvas) Visual {
 
 func (p *Select) Ask() (*int, error) {
 	if p.canvas == nil {
-		p.canvas = NewCanvas(p)
+		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
 	if err := p.canvas.Run(); err != nil {
@@ -125,7 +125,7 @@ func (p *Select) Ask() (*int, error) {
 		return nil, err
 	}
 
-	if !*p.config.EnableFiltering {
+	if !*p.options.EnableFiltering {
 		p.cursor.HideCursor()
 	}
 
@@ -140,11 +140,11 @@ func (p *Select) Ask() (*int, error) {
 		case msg := <-input:
 			p.showHelp = msg.Hint
 
-			if *p.config.EnableFiltering {
+			if *p.options.EnableFiltering {
 				p.filter = msg.Value
 			}
 
-			optionCount := len(p.filteredOptions)
+			optionCount := len(p.filteredChoices)
 			if msg.Key == keyboard.KeyArrowUp {
 				p.selectedIndex = Ptr(((*p.selectedIndex - 1 + optionCount) % optionCount))
 			} else if msg.Key == keyboard.KeyArrowDown {
@@ -159,7 +159,7 @@ func (p *Select) Ask() (*int, error) {
 
 			if p.complete {
 				done()
-				return &p.filteredOptions[*p.selectedIndex].Index, nil
+				return &p.filteredChoices[*p.selectedIndex].Index, nil
 			}
 		}
 	}
@@ -168,32 +168,32 @@ func (p *Select) Ask() (*int, error) {
 func (p *Select) applyFilter() {
 	// Filter options
 	if p.filter == "" {
-		p.filteredOptions = p.options
+		p.filteredChoices = p.choices
 	}
 
 	if p.cancelled || p.complete || p.filter == "" {
 		return
 	}
 
-	p.filteredOptions = []*selectOption{}
-	for _, option := range p.options {
+	p.filteredChoices = []*selectChoice{}
+	for _, option := range p.choices {
 		// Attempt to parse the filter as an index
-		if p.config.DisplayNumbers != nil && *p.config.DisplayNumbers {
+		if p.options.DisplayNumbers != nil && *p.options.DisplayNumbers {
 			index, err := strconv.Atoi(p.filter)
 			if err == nil {
 				if index == option.Index+1 {
-					p.filteredOptions = append(p.filteredOptions, option)
+					p.filteredChoices = append(p.filteredChoices, option)
 					continue
 				}
 			}
 		}
 
 		if strings.Contains(strings.ToLower(option.Value), strings.ToLower(p.filter)) {
-			p.filteredOptions = append(p.filteredOptions, option)
+			p.filteredChoices = append(p.filteredChoices, option)
 		}
 	}
 
-	if *p.selectedIndex > len(p.filteredOptions)-1 {
+	if *p.selectedIndex > len(p.filteredChoices)-1 {
 		p.selectedIndex = Ptr(0)
 	}
 }
@@ -204,19 +204,19 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 		return
 	}
 
-	totalOptionsCount := len(p.options)
-	filteredOptionsCount := len(p.filteredOptions)
+	totalOptionsCount := len(p.choices)
+	filteredOptionsCount := len(p.filteredChoices)
 	selected := *p.selectedIndex
 
-	start := selected - p.config.DisplayCount/2
-	end := start + p.config.DisplayCount
+	start := selected - p.options.DisplayCount/2
+	end := start + p.options.DisplayCount
 
 	if start < 0 {
 		start = 0
-		end = min(filteredOptionsCount, p.config.DisplayCount)
+		end = min(filteredOptionsCount, p.options.DisplayCount)
 	} else if end > filteredOptionsCount {
 		end = filteredOptionsCount
-		start = max(0, filteredOptionsCount-p.config.DisplayCount)
+		start = max(0, filteredOptionsCount-p.options.DisplayCount)
 	}
 
 	if start > 0 {
@@ -230,7 +230,7 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 	digitWidth := len(fmt.Sprintf("%d", totalOptionsCount)) // Calculate the width of the digit prefix
 	underline := color.New(color.Underline).SprintfFunc()
 
-	for index, option := range p.filteredOptions[start:end] {
+	for index, option := range p.filteredChoices[start:end] {
 		displayValue := option.Value
 
 		// Underline the matching portion of the string
@@ -246,7 +246,7 @@ func (p *Select) renderOptions(printer Printer, indent string) {
 		}
 
 		// Show item digit prefixes
-		if *p.config.DisplayNumbers {
+		if *p.options.DisplayNumbers {
 			digitPrefix := fmt.Sprintf("%*d.", digitWidth, option.Index+1) // Padded digit prefix
 			displayValue = fmt.Sprintf("%s %s", digitPrefix, displayValue)
 		}
@@ -271,7 +271,7 @@ func (p *Select) renderValidation(printer Printer) {
 	p.hasValidationError = false
 	p.validationMessage = ""
 
-	if len(p.filteredOptions) == 0 {
+	if len(p.filteredChoices) == 0 {
 		p.selectedIndex = nil
 		p.hasValidationError = true
 		p.validationMessage = "No options found matching the filter"
@@ -283,30 +283,30 @@ func (p *Select) renderValidation(printer Printer) {
 	}
 
 	// Hint
-	if p.showHelp && p.config.HelpMessage != "" {
+	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
 			color.HiMagentaString("%s %s\n",
 				BoldString("Hint:"),
-				p.config.HelpMessage,
+				p.options.HelpMessage,
 			),
 		)
 	}
 }
 
 func (p *Select) renderMessage1(printer Printer) {
-	if p.selectedIndex == nil && p.config.SelectedIndex != nil {
-		p.selectedIndex = p.config.SelectedIndex
+	if p.selectedIndex == nil && p.options.SelectedIndex != nil {
+		p.selectedIndex = p.options.SelectedIndex
 	}
 
 	printer.Fprintf(color.CyanString("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.config.Message))
+	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Hint
-	if !p.cancelled && !p.complete && p.config.Hint != "" {
-		printer.Fprintf("%s ", color.CyanString(p.config.Hint))
+	if !p.cancelled && !p.complete && p.options.Hint != "" {
+		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
 	}
 
 	// Filter
@@ -323,7 +323,7 @@ func (p *Select) renderMessage1(printer Printer) {
 
 	// Selected Value
 	if !p.cancelled && p.complete {
-		rawValue := p.filteredOptions[*p.selectedIndex].Value
+		rawValue := p.filteredChoices[*p.selectedIndex].Value
 		printer.Fprintf(color.CyanString(rawValue))
 	}
 
@@ -333,12 +333,12 @@ func (p *Select) renderMessage1(printer Printer) {
 func (p *Select) renderMessage2(printer Printer) {
 	printer.Fprintf(color.CyanString("? "))
 
-	if p.selectedIndex == nil && p.config.SelectedIndex != nil {
-		p.selectedIndex = p.config.SelectedIndex
+	if p.selectedIndex == nil && p.options.SelectedIndex != nil {
+		p.selectedIndex = p.options.SelectedIndex
 	}
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.config.Message))
+	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Cancelled
 	if p.cancelled {
@@ -347,14 +347,14 @@ func (p *Select) renderMessage2(printer Printer) {
 
 	// Selected Value
 	if !p.cancelled && p.complete {
-		rawValue := p.filteredOptions[*p.selectedIndex].Value
+		rawValue := p.filteredChoices[*p.selectedIndex].Value
 		printer.Fprintf(color.CyanString(rawValue))
 	}
 
 	printer.Fprintln()
 
 	// Filter
-	if !p.cancelled && !p.complete && *p.config.EnableFiltering {
+	if !p.cancelled && !p.complete && *p.options.EnableFiltering {
 		printer.Fprintln()
 		printer.Fprintf("  Filter: ")
 

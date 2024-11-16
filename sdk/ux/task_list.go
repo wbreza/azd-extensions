@@ -118,7 +118,7 @@ func (t *TaskList) WithCanvas(canvas Canvas) Visual {
 // Run executes all async tasks first and then runs queued sync tasks sequentially.
 func (t *TaskList) Run() error {
 	if t.canvas == nil {
-		t.canvas = NewCanvas(t)
+		t.canvas = NewCanvas(t).WithWriter(t.config.Writer)
 	}
 
 	if err := t.canvas.Run(); err != nil {

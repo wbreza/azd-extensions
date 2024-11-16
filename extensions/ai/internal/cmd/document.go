@@ -9,6 +9,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/extensions/ai/internal"
+	"github.com/wbreza/azd-extensions/extensions/ai/internal/docprep"
 	"github.com/wbreza/azd-extensions/sdk/common"
 	"github.com/wbreza/azd-extensions/sdk/ext"
 	"github.com/wbreza/azd-extensions/sdk/ext/output"
@@ -141,7 +142,7 @@ func newUploadCommand() *cobra.Command {
 				fmt.Println()
 				fmt.Printf("Found %s matching files with pattern %s.\n", color.CyanString(fmt.Sprint(len(matchingFiles))), color.CyanString(flags.Pattern))
 
-				continueConfirm := ux.NewConfirm(&ux.ConfirmConfig{
+				continueConfirm := ux.NewConfirm(&ux.ConfirmOptions{
 					DefaultValue: ux.Ptr(true),
 					Message:      "Continue uploading documents?",
 				})
@@ -158,7 +159,7 @@ func newUploadCommand() *cobra.Command {
 
 			taskList := ux.NewTaskList(nil)
 
-			docPrepService, err := internal.NewDocumentPrepService(ctx, azdContext, extensionConfig)
+			docPrepService, err := docprep.NewDocumentPrepService(ctx, azdContext, extensionConfig)
 			if err != nil {
 				return err
 			}

@@ -26,6 +26,7 @@ require (
 	github.com/texttheater/golang-levenshtein/levenshtein v0.0.0-20200805054039-cae8b0eaed6c // indirect
 	github.com/wbreza/azure-sdk-for-go/sdk/data/azsearch v0.3.0 // indirect
 	github.com/wbreza/azure-sdk-for-go/sdk/data/azsearchindex v0.3.1 // indirect
+	github.com/yuin/goldmark v1.7.8 // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
 	golang.org/x/text v0.19.0 // indirect

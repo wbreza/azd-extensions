@@ -144,14 +144,14 @@ func (c *Context) Deployment(ctx context.Context) (*azure.ResourceDeployment, er
 			deploymentName := fmt.Sprintf("azd-stack-%s", env.Name())
 			deployment, err := deploymentService.GetSubscriptionDeployment(ctx, env.GetSubscriptionId(), deploymentName)
 			if err != nil {
-				return err
+				return fmt.Errorf("%w, Details: %w", azure.ErrDeploymentNotFound, err)
 			}
 
 			c.deployment = deployment
 			return nil
 		})
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("%w, Details: %w", azure.ErrDeploymentNotFound, err)
 		}
 	}
 
@@ -161,17 +161,13 @@ func (c *Context) Deployment(ctx context.Context) (*azure.ResourceDeployment, er
 func (c *Context) AzureContext(ctx context.Context) (*AzureContext, error) {
 	if c.azureContext == nil {
 		err := c.container.Invoke(func(resourceService *azure.ResourceService) error {
-			azdEnv, err := c.Environment(ctx)
-			if err != nil {
-				if errors.Is(err, ErrEnvironmentNotFound) {
-					return nil
-				}
-
-				return err
-			}
-
 			scope := AzureScope{}
 			resources := NewAzureResourceList(resourceService)
+
+			azdEnv, err := c.Environment(ctx)
+			if err != nil && !errors.Is(err, ErrEnvironmentNotFound) {
+				return err
+			}
 
 			if azdEnv != nil {
 				subscriptionId := azdEnv.GetSubscriptionId()
@@ -184,11 +180,7 @@ func (c *Context) AzureContext(ctx context.Context) (*AzureContext, error) {
 			}
 
 			deployment, err := c.Deployment(ctx)
-			if err != nil {
-				if errors.Is(err, azure.ErrDeploymentNotFound) {
-					c.azureContext = NewAzureContext(scope, resources)
-				}
-
+			if err != nil && !errors.Is(err, azure.ErrDeploymentNotFound) {
 				return err
 			}
 

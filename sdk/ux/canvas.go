@@ -61,7 +61,7 @@ func (c *canvas) render() error {
 }
 
 func (c *canvas) renderVisual(visual Visual) error {
-	err := visual.WithCanvas(c).Render(c.printer)
+	err := visual.Render(c.printer)
 	if err != nil {
 		return err
 	}

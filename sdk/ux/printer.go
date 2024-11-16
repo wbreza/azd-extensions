@@ -3,6 +3,7 @@ package ux
 import (
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"os"
 	"regexp"
@@ -127,8 +128,14 @@ func (p *printer) Fprintf(format string, a ...any) {
 
 	fmt.Fprint(p.writer, content)
 
-	p.size.Cols = len(specialTextRegex.ReplaceAllString(p.currentLine, ""))
+	log.Printf("content: %s", p.currentLine)
+
+	visibleContent := specialTextRegex.ReplaceAllString(p.currentLine, "")
+
+	p.size.Cols = len(visibleContent)
 	p.size.Rows += lineCount
+
+	log.Printf("visibleContent: %s (%d, %d)", visibleContent, p.size.Rows, p.size.Cols)
 }
 
 func (p *printer) Fprintln(a ...any) {
@@ -138,6 +145,8 @@ func (p *printer) Fprintln(a ...any) {
 func (p *printer) ClearCanvas() {
 	p.clearLock.Lock()
 	defer p.clearLock.Unlock()
+
+	p.currentLine = ""
 
 	// 1. Move cursor to the bottom-right corner of the canvas
 	p.MoveCursorToEnd()

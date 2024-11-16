@@ -11,7 +11,7 @@ import (
 	"github.com/fatih/color"
 )
 
-type PromptConfig struct {
+type PromptOptions struct {
 	// The writer to use for output (default: os.Stdout)
 	Writer io.Writer
 	// The reader to use for input (default: os.Stdin)
@@ -40,7 +40,7 @@ type PromptConfig struct {
 	IgnoreHintKeys bool
 }
 
-var DefaultPromptConfig PromptConfig = PromptConfig{
+var DefaultPromptOptions PromptOptions = PromptOptions{
 	Writer:            os.Stdout,
 	Reader:            os.Stdin,
 	Required:          false,
@@ -58,7 +58,7 @@ type Prompt struct {
 	input *internal.Input
 
 	canvas             Canvas
-	config             *PromptConfig
+	options            *PromptOptions
 	hasValidationError bool
 	value              string
 	showHelp           bool
@@ -69,35 +69,35 @@ type Prompt struct {
 	cursorPosition     *CursorPosition
 }
 
-func NewPrompt(config *PromptConfig) *Prompt {
-	mergedConfig := PromptConfig{}
-	if err := mergo.Merge(&mergedConfig, DefaultPromptConfig, mergo.WithoutDereference); err != nil {
+func NewPrompt(options *PromptOptions) *Prompt {
+	mergedOptions := PromptOptions{}
+	if err := mergo.Merge(&mergedOptions, DefaultPromptOptions, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	if err := mergo.Merge(&mergedConfig, config, mergo.WithoutDereference); err != nil {
+	if err := mergo.Merge(&mergedOptions, options, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
 	return &Prompt{
-		input:  internal.NewInput(),
-		config: &mergedConfig,
-		value:  mergedConfig.DefaultValue,
+		input:   internal.NewInput(),
+		options: &mergedOptions,
+		value:   mergedOptions.DefaultValue,
 	}
 }
 
 func (p *Prompt) validate() {
 	p.hasValidationError = false
-	p.validationMessage = p.config.ValidationMessage
+	p.validationMessage = p.options.ValidationMessage
 
-	if p.config.Required && p.value == "" {
+	if p.options.Required && p.value == "" {
 		p.hasValidationError = true
-		p.validationMessage = p.config.RequiredMessage
+		p.validationMessage = p.options.RequiredMessage
 		return
 	}
 
-	if p.config.ValidationFn != nil {
-		ok, msg := p.config.ValidationFn(p.value)
+	if p.options.ValidationFn != nil {
+		ok, msg := p.options.ValidationFn(p.value)
 		if !ok {
 			p.hasValidationError = true
 			if msg != "" {
@@ -114,7 +114,7 @@ func (p *Prompt) WithCanvas(canvas Canvas) Visual {
 
 func (p *Prompt) Ask() (string, error) {
 	if p.canvas == nil {
-		p.canvas = NewCanvas(p)
+		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
 	if err := p.canvas.Run(); err != nil {
@@ -122,8 +122,8 @@ func (p *Prompt) Ask() (string, error) {
 	}
 
 	inputOptions := &internal.InputConfig{
-		InitialValue:   p.config.DefaultValue,
-		IgnoreHintKeys: p.config.IgnoreHintKeys,
+		InitialValue:   p.options.DefaultValue,
+		IgnoreHintKeys: p.options.IgnoreHintKeys,
 	}
 	input, done, err := p.input.ReadInput(inputOptions)
 	if err != nil {
@@ -163,31 +163,37 @@ func (p *Prompt) Ask() (string, error) {
 }
 
 func (p *Prompt) Render(printer Printer) error {
-	if p.config.ClearOnCompletion && p.complete {
+	if p.options.ClearOnCompletion && p.complete {
 		return nil
 	}
 
 	printer.Fprintf(color.CyanString("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.config.Message))
+	printer.Fprintf(BoldString("%s: ", p.options.Message))
+
+	// Cancelled
+	if p.cancelled {
+		printer.Fprintln(color.HiRedString("(Cancelled)"))
+		return nil
+	}
 
 	// Hint (Only show when a help message has been defined)
-	if !p.cancelled && !p.complete && p.config.Hint != "" && p.config.HelpMessage != "" {
-		printer.Fprintf("%s ", color.CyanString(p.config.Hint))
+	if !p.complete && p.options.Hint != "" && p.options.HelpMessage != "" {
+		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
 	}
 
 	// Placeholder
-	if !p.cancelled && p.value == "" && p.config.PlaceHolder != "" {
+	if p.value == "" && p.options.PlaceHolder != "" {
 		p.cursorPosition = Ptr(printer.CursorPosition())
-		printer.Fprintf(color.HiBlackString(p.config.PlaceHolder))
+		printer.Fprintf(color.HiBlackString(p.options.PlaceHolder))
 	}
 
 	// Value
-	if !p.cancelled && p.value != "" {
+	if p.value != "" {
 		valueOutput := p.value
 
-		if p.complete || p.value == p.config.DefaultValue {
+		if p.complete || p.value == p.options.DefaultValue {
 			valueOutput = color.CyanString(p.value)
 		}
 
@@ -195,13 +201,8 @@ func (p *Prompt) Render(printer Printer) error {
 		p.cursorPosition = Ptr(printer.CursorPosition())
 	}
 
-	// Cancelled
-	if p.cancelled {
-		printer.Fprintf(color.HiRedString("(Cancelled)"))
-	}
-
 	// Done
-	if p.complete || p.cancelled {
+	if p.complete {
 		printer.Fprintln()
 		return nil
 	}
@@ -213,16 +214,17 @@ func (p *Prompt) Render(printer Printer) error {
 	}
 
 	// Hint
-	if p.showHelp && p.config.HelpMessage != "" {
+	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
 			color.HiMagentaString("%s %s\n",
 				BoldString("Hint:"),
-				p.config.HelpMessage,
+				p.options.HelpMessage,
 			),
 		)
 	}
 
+	// Only need to reset the cursor position when we are showing a message
 	if p.cursorPosition != nil {
 		printer.SetCursorPosition(*p.cursorPosition)
 	}

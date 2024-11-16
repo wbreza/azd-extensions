@@ -155,7 +155,7 @@ func newChatCommand() *cobra.Command {
 				return err
 			}
 
-			loadingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+			loadingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 				Text:        "Starting chat...",
 				ClearOnStop: true,
 			})
@@ -200,7 +200,7 @@ func newChatCommand() *cobra.Command {
 				Content: azopenai.NewChatRequestSystemMessageContent(flags.systemMessage),
 			})
 
-			thinkingSpinner := ux.NewSpinner(&ux.SpinnerConfig{
+			thinkingSpinner := ux.NewSpinner(&ux.SpinnerOptions{
 				Text: "Thinking...",
 			})
 
@@ -211,7 +211,7 @@ func newChatCommand() *cobra.Command {
 				var err error
 
 				if userMessage == "" {
-					chatPrompt := ux.NewPrompt(&ux.PromptConfig{
+					chatPrompt := ux.NewPrompt(&ux.PromptOptions{
 						Message:           "User",
 						PlaceHolder:       "Press `Ctrl+X` to cancel",
 						Required:          true,
@@ -248,12 +248,12 @@ func newChatCommand() *cobra.Command {
 					}
 
 					searchResponse, err := searchClient.SearchPost(ctx, azsearchindex.SearchRequest{
-						Select:    to.Ptr("chunk_id, chunk, title"),
+						Select:    to.Ptr("id, summary, path"),
 						QueryType: to.Ptr(azsearchindex.QueryTypeSimple),
 						VectorQueries: []azsearchindex.VectorQueryClassification{
 							&azsearchindex.VectorizedQuery{
 								Kind:       to.Ptr(azsearchindex.VectorQueryKindVector),
-								Fields:     to.Ptr("text_vector"),
+								Fields:     to.Ptr("vector"),
 								Exhaustive: to.Ptr(true),
 								K:          to.Ptr(int32(3)),
 								Vector:     internal.ConvertToFloatPtrSlice(embeddingsResponse.Data[0].Embedding),
@@ -268,8 +268,8 @@ func newChatCommand() *cobra.Command {
 						contextResults := make([]string, len(searchResponse.Results))
 
 						for i, result := range searchResponse.Results {
-							contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["chunk"]))
-							log.Printf("Title: %s, Score: %f\n", result.AdditionalProperties["title"], *result.Score)
+							contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["content"]))
+							log.Printf("Title: %s, Score: %f\n", result.AdditionalProperties["path"], *result.Score)
 						}
 
 						userMessage = fmt.Sprintf("Question: \"%s\"\n\nContext:\n%s", userMessage, strings.Join(contextResults, "\n\n"))

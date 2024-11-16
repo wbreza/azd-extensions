@@ -111,6 +111,19 @@ func SaveExtensionConfig(ctx context.Context, azdContext *ext.Context, config *E
 		return nil
 	}
 
+	azureContext, err := azdContext.AzureContext(ctx)
+	if err != nil {
+		return err
+	}
+
+	if config.Subscription == "" && azureContext.Scope.SubscriptionId != "" {
+		config.Subscription = azureContext.Scope.SubscriptionId
+	}
+
+	if config.ResourceGroup == "" && azureContext.Scope.ResourceGroup != "" {
+		config.ResourceGroup = azureContext.Scope.ResourceGroup
+	}
+
 	userConfig, err := azdContext.UserConfig(ctx)
 	if err == nil && userConfig != nil {
 		if err := userConfig.Set("ai.config", config); err != nil {

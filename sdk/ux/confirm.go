@@ -14,7 +14,7 @@ import (
 	"github.com/fatih/color"
 )
 
-type ConfirmConfig struct {
+type ConfirmOptions struct {
 	// The writer to use for output (default: os.Stdout)
 	Writer io.Writer
 	// The reader to use for input (default: os.Stdin)
@@ -31,7 +31,7 @@ type ConfirmConfig struct {
 	PlaceHolder string
 }
 
-var DefaultConfirmConfig ConfirmConfig = ConfirmConfig{
+var DefaultConfirmOptions ConfirmOptions = ConfirmOptions{
 	Writer: os.Stdout,
 	Reader: os.Stdin,
 }
@@ -40,7 +40,7 @@ type Confirm struct {
 	canvas Canvas
 	input  *internal.Input
 
-	config             *ConfirmConfig
+	options            *ConfirmOptions
 	hasValidationError bool
 	value              *bool
 	showHelp           bool
@@ -51,13 +51,13 @@ type Confirm struct {
 	cursorPosition     *CursorPosition
 }
 
-func NewConfirm(config *ConfirmConfig) *Confirm {
-	mergedOptions := ConfirmConfig{}
-	if err := mergo.Merge(&mergedOptions, config, mergo.WithoutDereference); err != nil {
+func NewConfirm(options *ConfirmOptions) *Confirm {
+	mergedOptions := ConfirmOptions{}
+	if err := mergo.Merge(&mergedOptions, options, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
-	if err := mergo.Merge(&mergedOptions, DefaultConfirmConfig, mergo.WithoutDereference); err != nil {
+	if err := mergo.Merge(&mergedOptions, DefaultConfirmOptions, mergo.WithoutDereference); err != nil {
 		panic(err)
 	}
 
@@ -88,7 +88,7 @@ func NewConfirm(config *ConfirmConfig) *Confirm {
 
 	return &Confirm{
 		input:        internal.NewInput(),
-		config:       &mergedOptions,
+		options:      &mergedOptions,
 		displayValue: displayValue,
 		value:        mergedOptions.DefaultValue,
 	}
@@ -101,7 +101,7 @@ func (p *Confirm) WithCanvas(canvas Canvas) Visual {
 
 func (p *Confirm) Ask() (*bool, error) {
 	if p.canvas == nil {
-		p.canvas = NewCanvas(p)
+		p.canvas = NewCanvas(p).WithWriter(p.options.Writer)
 	}
 
 	if err := p.canvas.Run(); err != nil {
@@ -136,8 +136,8 @@ func (p *Confirm) Ask() (*bool, error) {
 				}
 			} else {
 				p.hasValidationError = false
-				if msg.Value == "" && p.config.DefaultValue != nil {
-					p.value = p.config.DefaultValue
+				if msg.Value == "" && p.options.DefaultValue != nil {
+					p.value = p.options.DefaultValue
 					p.displayValue = getBooleanString(*p.value)
 				} else {
 					value, err := parseBooleanString(string(msg.Char))
@@ -170,18 +170,18 @@ func (p *Confirm) Render(printer Printer) error {
 	printer.Fprintf(color.CyanString("? "))
 
 	// Message
-	printer.Fprintf(BoldString("%s: ", p.config.Message))
+	printer.Fprintf(BoldString("%s: ", p.options.Message))
 
 	// Hint
-	if !p.cancelled && !p.complete && p.config.Hint != "" {
-		printer.Fprintf("%s ", color.CyanString(p.config.Hint))
+	if !p.cancelled && !p.complete && p.options.Hint != "" {
+		printer.Fprintf("%s ", color.CyanString(p.options.Hint))
 	}
 
 	// Value
 	rawStringValue := p.displayValue
 	valueOutput := rawStringValue
 
-	if p.complete || p.value == p.config.DefaultValue {
+	if p.complete || p.value == p.options.DefaultValue {
 		valueOutput = color.CyanString(rawStringValue)
 	}
 
@@ -204,12 +204,12 @@ func (p *Confirm) Render(printer Printer) error {
 	}
 
 	// Hint
-	if p.showHelp && p.config.HelpMessage != "" {
+	if p.showHelp && p.options.HelpMessage != "" {
 		printer.Fprintln()
 		printer.Fprintf(
 			color.HiMagentaString("%s %s\n",
 				BoldString("Hint:"),
-				p.config.HelpMessage,
+				p.options.HelpMessage,
 			),
 		)
 	}

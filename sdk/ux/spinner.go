@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 	"os"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"dario.cat/mergo"
@@ -15,14 +17,15 @@ type Spinner struct {
 	canvas Canvas
 
 	cursor         internal.Cursor
-	options        *SpinnerConfig
-	running        bool
+	options        *SpinnerOptions
+	running        int32
 	animationIndex int
 	text           string
 	clear          bool
+	canvasMutex    sync.Mutex
 }
 
-type SpinnerConfig struct {
+type SpinnerOptions struct {
 	Animation   []string
 	Text        string
 	Interval    time.Duration
@@ -30,20 +33,20 @@ type SpinnerConfig struct {
 	Writer      io.Writer
 }
 
-var DefaultSpinnerConfig SpinnerConfig = SpinnerConfig{
+var DefaultSpinnerOptions SpinnerOptions = SpinnerOptions{
 	Animation: []string{"|", "/", "-", "\\"},
 	Text:      "Loading...",
 	Interval:  250 * time.Millisecond,
 	Writer:    os.Stdout,
 }
 
-func NewSpinner(options *SpinnerConfig) *Spinner {
-	mergedConfig := SpinnerConfig{}
+func NewSpinner(options *SpinnerOptions) *Spinner {
+	mergedConfig := SpinnerOptions{}
 	if err := mergo.Merge(&mergedConfig, options); err != nil {
 		panic(err)
 	}
 
-	if err := mergo.Merge(&mergedConfig, DefaultSpinnerConfig); err != nil {
+	if err := mergo.Merge(&mergedConfig, DefaultSpinnerOptions); err != nil {
 		panic(err)
 	}
 
@@ -55,46 +58,54 @@ func NewSpinner(options *SpinnerConfig) *Spinner {
 }
 
 func (s *Spinner) WithCanvas(canvas Canvas) Visual {
-	s.canvas = canvas
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if canvas != nil {
+		s.canvas = canvas
+	}
+
 	return s
 }
 
 func (s *Spinner) Start(ctx context.Context) error {
-	if s.canvas == nil {
-		s.canvas = NewCanvas(s).WithWriter(s.options.Writer)
-	}
+	s.ensureCanvas()
 
 	s.clear = false
-	s.running = true
+	atomic.StoreInt32(&s.running, 1)
 	s.cursor.HideCursor()
 
 	go func(ctx context.Context) {
 		for {
-			if !s.running {
+			if atomic.LoadInt32(&s.running) == 0 {
 				return
 			}
 
-			s.canvas.Update()
+			s.update()
 			time.Sleep(s.options.Interval)
 		}
 	}(ctx)
 
-	return s.canvas.Run()
+	return s.run()
 }
 
 func (s *Spinner) Stop(ctx context.Context) error {
-	s.running = false
+	s.ensureCanvas()
+
+	atomic.StoreInt32(&s.running, 0)
 	s.cursor.ShowCursor()
 
 	if s.options.ClearOnStop {
 		s.clear = true
-		return s.canvas.Update()
+		return s.update()
 	}
 
 	return nil
 }
 
 func (s *Spinner) Run(ctx context.Context, task func(context.Context) error) error {
+	s.ensureCanvas()
+
 	s.options.ClearOnStop = true
 
 	if err := s.Start(ctx); err != nil {
@@ -127,4 +138,35 @@ func (s *Spinner) Render(printer Printer) error {
 	}
 
 	return nil
+}
+
+func (s *Spinner) ensureCanvas() {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if s.canvas == nil {
+		s.canvas = NewCanvas(s).WithWriter(s.options.Writer)
+	}
+}
+
+func (s *Spinner) update() error {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if s.canvas == nil {
+		return nil
+	}
+
+	return s.canvas.Update()
+}
+
+func (s *Spinner) run() error {
+	s.canvasMutex.Lock()
+	defer s.canvasMutex.Unlock()
+
+	if s.canvas == nil {
+		return nil
+	}
+
+	return s.canvas.Run()
 }

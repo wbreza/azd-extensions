@@ -226,7 +226,7 @@ func newDeploymentCommand() *cobra.Command {
 			confirmed := to.Ptr(false)
 
 			if !deleteFlags.force {
-				confirmPrompt := ux.NewConfirm(&ux.ConfirmConfig{
+				confirmPrompt := ux.NewConfirm(&ux.ConfirmOptions{
 					Message:      fmt.Sprintf("Are you sure you want to delete the deployment '%s'?", deleteFlags.name),
 					DefaultValue: to.Ptr(false),
 				})

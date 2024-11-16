@@ -63,7 +63,7 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, azureC
 				return nil, err
 			}
 
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message: "Enter the name for the Azure AI service account",
 			})
 
@@ -294,7 +294,7 @@ func PromptModelDeployment(ctx context.Context, azdContext *ext.Context, azureCo
 			}
 			var deploymentName string
 
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message:      "Enter the name for the deployment",
 				DefaultValue: *selectedModel.Model.Name,
 			})
@@ -480,10 +480,6 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, azureCon
 		return nil, err
 	}
 
-	if err := azureContext.EnsureResourceGroup(ctx); err != nil {
-		return nil, err
-	}
-
 	credential, err := azdContext.Credential()
 	if err != nil {
 		return nil, err
@@ -514,7 +510,11 @@ func PromptStorageAccount(ctx context.Context, azdContext *ext.Context, azureCon
 		ResourceType:            to.Ptr(azure.ResourceTypeStorageAccount),
 		ResourceTypeDisplayName: "Azure Storage account",
 		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			if err := azureContext.EnsureResourceGroup(ctx); err != nil {
+				return nil, err
+			}
+
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message: "Enter the name for the storage account",
 			})
 
@@ -699,7 +699,7 @@ func PromptStorageContainer(ctx context.Context, azdContext *ext.Context, azureC
 			return *resource.Name, nil
 		},
 		CreateResource: func(ctx context.Context) (*armstorage.BlobContainer, error) {
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message: "Enter the name for the blob container",
 			})
 
@@ -752,10 +752,6 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, azureCont
 		return nil, err
 	}
 
-	if err := azureContext.EnsureResourceGroup(ctx); err != nil {
-		return nil, err
-	}
-
 	kinds := []string{"OpenAI", "AIServices", "CognitiveServices"}
 	aiService, has := azureContext.Resources.FindByTypeAndKind(ctx, azure.ResourceTypeCognitiveServiceAccount, kinds)
 	if !has {
@@ -797,7 +793,11 @@ func PromptSearchService(ctx context.Context, azdContext *ext.Context, azureCont
 		ResourceType:            to.Ptr(azure.ResourceTypeSearchService),
 		ResourceTypeDisplayName: "Azure AI Search",
 		CreateResource: func(ctx context.Context) (*azure.ResourceExtended, error) {
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			if err := azureContext.EnsureResourceGroup(ctx); err != nil {
+				return nil, err
+			}
+
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message: "Enter the name for the Azure AI Search service",
 			})
 
@@ -1029,7 +1029,7 @@ func PromptSearchIndex(ctx context.Context, azdContext *ext.Context, azureContex
 			return *index.Name, nil
 		},
 		CreateResource: func(ctx context.Context) (*azsearch.Index, error) {
-			namePrompt := ux.NewPrompt(&ux.PromptConfig{
+			namePrompt := ux.NewPrompt(&ux.PromptOptions{
 				Message: "Enter the name for the Azure Search index",
 			})
 
@@ -1073,7 +1073,7 @@ func defaultSearchIndex(indexName string) *azsearch.Index {
 		Name: &indexName,
 		Fields: []*azsearch.Field{
 			{
-				Name:        to.Ptr("chunk_id"),
+				Name:        to.Ptr("id"),
 				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
 				Key:         to.Ptr(true),
 				Analyzer:    to.Ptr(azsearch.LexicalAnalyzerNameKeyword),
@@ -1084,7 +1084,7 @@ func defaultSearchIndex(indexName string) *azsearch.Index {
 				Searchable:  to.Ptr(true),
 			},
 			{
-				Name:        to.Ptr("parent_id"),
+				Name:        to.Ptr("parentId"),
 				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
 				Analyzer:    nil,
 				Retrievable: to.Ptr(true),
@@ -1094,7 +1094,7 @@ func defaultSearchIndex(indexName string) *azsearch.Index {
 				Searchable:  to.Ptr(false),
 			},
 			{
-				Name:        to.Ptr("chunk"),
+				Name:        to.Ptr("summary"),
 				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
 				Retrievable: to.Ptr(true),
 				Filterable:  to.Ptr(false),
@@ -1103,7 +1103,7 @@ func defaultSearchIndex(indexName string) *azsearch.Index {
 				Searchable:  to.Ptr(true),
 			},
 			{
-				Name:        to.Ptr("title"),
+				Name:        to.Ptr("content"),
 				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
 				Retrievable: to.Ptr(true),
 				Filterable:  to.Ptr(false),
@@ -1112,7 +1112,16 @@ func defaultSearchIndex(indexName string) *azsearch.Index {
 				Searchable:  to.Ptr(true),
 			},
 			{
-				Name:                    to.Ptr("text_vector"),
+				Name:        to.Ptr("path"),
+				Type:        to.Ptr(azsearch.SearchFieldDataTypeString),
+				Retrievable: to.Ptr(true),
+				Filterable:  to.Ptr(false),
+				Sortable:    to.Ptr(false),
+				Facetable:   to.Ptr(false),
+				Searchable:  to.Ptr(true),
+			},
+			{
+				Name:                    to.Ptr("vector"),
 				Type:                    to.Ptr(azsearch.SearchFieldDataType("Collection(Edm.Single)")),
 				VectorSearchDimensions:  to.Ptr(int32(1536)),
 				VectorSearchProfileName: to.Ptr("default"),
