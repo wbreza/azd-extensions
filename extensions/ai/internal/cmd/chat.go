@@ -248,7 +248,7 @@ func newChatCommand() *cobra.Command {
 					}
 
 					searchResponse, err := searchClient.SearchPost(ctx, azsearchindex.SearchRequest{
-						Select:    to.Ptr("id, summary, path"),
+						Select:    to.Ptr("id, summary, content, path"),
 						QueryType: to.Ptr(azsearchindex.QueryTypeSimple),
 						VectorQueries: []azsearchindex.VectorQueryClassification{
 							&azsearchindex.VectorizedQuery{
@@ -268,7 +268,7 @@ func newChatCommand() *cobra.Command {
 						contextResults := make([]string, len(searchResponse.Results))
 
 						for i, result := range searchResponse.Results {
-							contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["content"]))
+							contextResults[i] = fmt.Sprintf("- [%d] %s", i+1, fmt.Sprint(result.AdditionalProperties["summary"]))
 							log.Printf("Title: %s, Score: %f\n", result.AdditionalProperties["path"], *result.Score)
 						}
 

@@ -106,6 +106,8 @@ func (d *DocumentPrepService) createParser(document *Document) (DocumentParser, 
 	switch extension {
 	case ".md":
 		return NewMarkdownParser(), nil
+	case ".json":
+		return NewJsonParser(), nil
 	default:
 		return NewDefaultParser(), nil
 	}

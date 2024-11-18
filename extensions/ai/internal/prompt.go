@@ -160,18 +160,26 @@ func PromptAIServiceAccount(ctx context.Context, azdContext *ext.Context, azureC
 		return nil, err
 	}
 
-	if aiService == nil {
-		parsedResource, err := arm.ParseResourceID(selectedResource.Id)
-		if err != nil {
-			return nil, err
-		}
+	parsedResource, err := arm.ParseResourceID(selectedResource.Id)
+	if err != nil {
+		return nil, err
+	}
 
+	if aiService == nil {
 		existingAccount, err := accountsClient.Get(ctx, parsedResource.ResourceGroupName, parsedResource.Name, nil)
 		if err != nil {
 			return nil, err
 		}
 
 		aiService = &existingAccount.Account
+	}
+
+	if azureContext.Scope.SubscriptionId == "" {
+		azureContext.Scope.SubscriptionId = parsedResource.SubscriptionID
+	}
+
+	if azureContext.Scope.ResourceGroup == "" {
+		azureContext.Scope.ResourceGroup = parsedResource.ResourceGroupName
 	}
 
 	return aiService, nil

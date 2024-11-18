@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -34,10 +35,12 @@ var defaultUpWorkflow = &contracts.Workflow{
 
 // Flag structs for the azd ai document commands
 type SetupFlags struct {
+	Reset bool
 }
 
 // Command to initialize `azd ai document` command group
 func newSetupCommand() *cobra.Command {
+	flags := &SetupFlags{}
 	// Main `document` command
 	setupCmd := &cobra.Command{
 		Use:   "setup",
@@ -64,8 +67,18 @@ func newSetupCommand() *cobra.Command {
 			fmt.Println("Let's get started by setting up your AI project")
 			fmt.Println()
 
-			extensionConfig, err := internal.LoadExtensionConfig(ctx, azdContext)
-			if err != nil {
+			var extensionConfig *internal.ExtensionConfig
+
+			if flags.Reset {
+				extensionConfig = &internal.ExtensionConfig{}
+			} else {
+				extensionConfig, err = internal.LoadExtensionConfig(ctx, azdContext)
+				if err != nil {
+					return err
+				}
+			}
+
+			if extensionConfig.Ai.Service == "" {
 				aiAccount, err := internal.PromptAIServiceAccount(ctx, azdContext, azureContext)
 				if err != nil {
 					return err
@@ -205,6 +218,34 @@ func newSetupCommand() *cobra.Command {
 						log.Fatalf("Error getting current working directory: %v", err)
 					}
 
+					absOutputPath := filepath.Join(cwd, userOutputPath)
+					if err := os.MkdirAll(absOutputPath, permissions.PermissionDirectory); err != nil {
+						return err
+					}
+
+					hasExistingOutputFiles, err := containsFilesOrFolders(absOutputPath)
+					if err != nil {
+						return err
+					}
+
+					if hasExistingOutputFiles {
+						deleteExistingOutputConfirm := ux.NewConfirm(&ux.ConfirmOptions{
+							Message:      "The output path contains existing files. Do you want to delete them?",
+							DefaultValue: to.Ptr(false),
+						})
+
+						userDeleteExistingOutput, err := deleteExistingOutputConfirm.Ask()
+						if err != nil {
+							return err
+						}
+
+						if *userDeleteExistingOutput {
+							if err := deleteContents(absOutputPath); err != nil {
+								return err
+							}
+						}
+					}
+
 					// Combine the current working directory with the relative path
 					absSourcePath := filepath.Join(cwd, userSourcePath)
 					matchingFiles, err := getMatchingFiles(absSourcePath, userFilePattern, true)
@@ -214,11 +255,6 @@ func newSetupCommand() *cobra.Command {
 
 					if len(matchingFiles) == 0 {
 						return fmt.Errorf("no files found at source location")
-					}
-
-					absOutputPath := filepath.Join(cwd, userOutputPath)
-					if err := os.MkdirAll(absOutputPath, permissions.PermissionDirectory); err != nil {
-						return err
 					}
 
 					if extensionConfig.Ai.Models.Embeddings == "" {
@@ -449,5 +485,49 @@ func newSetupCommand() *cobra.Command {
 		},
 	}
 
+	setupCmd.Flags().BoolVar(&flags.Reset, "reset", false, "Resets the AI project configuration")
+
 	return setupCmd
+}
+
+func containsFilesOrFolders(folderPath string) (bool, error) {
+	// Open the folder
+	dir, err := os.Open(folderPath)
+	if err != nil {
+		return false, fmt.Errorf("failed to open directory: %v", err)
+	}
+	defer dir.Close()
+
+	// Read a single entry
+	_, err = dir.Readdir(1)
+	if err == nil {
+		return true, nil // Folder contains at least one file or subfolder
+	}
+
+	// Check if the error is EOF, indicating no files/folders
+	if err == io.EOF {
+		return false, nil
+	}
+
+	// Other errors
+	return false, fmt.Errorf("failed to read directory: %v", err)
+}
+
+func deleteContents(folderPath string) error {
+	// Read the contents of the directory
+	contents, err := os.ReadDir(folderPath)
+	if err != nil {
+		return fmt.Errorf("failed to read directory: %v", err)
+	}
+
+	// Loop through and remove each item
+	for _, item := range contents {
+		itemPath := folderPath + "/" + item.Name()
+
+		// Remove item (file or directory)
+		if err := os.RemoveAll(itemPath); err != nil {
+			return fmt.Errorf("failed to remove %s: %v", itemPath, err)
+		}
+	}
+	return nil
 }
