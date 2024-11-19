@@ -30,42 +30,42 @@
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c6114e71c55f647a1ddeeebbe38baea900dfb1827033136025bcf0181f9aa2ab"
+                "value": "ca57b93b12e52595d57e3b6f80dbde838ddf4a50d4471e7b1f2c37a5db821aee"
               }
             },
             "darwin/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "2a44ca07bf8374f69015e227b11b1357c135588d64b9e9451f1fd91fbba14595"
+                "value": "55bca5621f83706ce4284819d733ec109bba4ec8f76896eb87bf38e0ac4360fb"
               }
             },
             "linux/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "ba47e05c6aa767e409892b1575bb8e2d7f1809bd91bf47d843b5f9ac3ff966f6"
+                "value": "772758ee8dad6c1da587260c92cd242b3a2f9d9aa31e7e34f65ececdbc8e99c8"
               }
             },
             "linux/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "215f02c9f9a070a65bc155934f5b786967823975bdc50f069f24bb51858c5161"
+                "value": "3ea07945f9a98ad20d94e5d550c8483794560095584a3097f604490084330c56"
               }
             },
             "windows/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cb6dad94a5f7f1d92805a8141df1f7a551b16c2431038e4671615e7c45a2fce4"
+                "value": "cd3812d975f885c16a38d5e0f4977095aef28660414103e75aaa25f677a29898"
               }
             },
             "windows/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "8fd7736d3f9601edaf67c3ff48dc5b47b1223677e3e619faa665380bfe8c33ea"
+                "value": "256a38379218002f3211cfcb244e667d0c2c2a935e003680bb51aa03cb3f9417"
               }
             }
           }
@@ -92,42 +92,42 @@
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "7ec7cee57427a0a0fecb4b4c01018497a148721b631cce208ffe650fed2e2d64"
+                "value": "4f92208f7f17ab15b2f28e7669709ef4ceef74a3d0478ef70f98d8dea05568d2"
               }
             },
             "darwin/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "2204c5f0061f6c254c1c41c0f5ff8a8f780bf21a6655cbd9d40d83056de68bae"
+                "value": "c55c08c12c61ec67ebe898778f3bcbebedfdcf3ae8cef9aa806e5d8b4275bb1e"
               }
             },
             "linux/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "646295560db9d28880bc6ef858ccd3f963a72fb241540fea9fda3506256eca46"
+                "value": "b5cac52a5731c1ace818a7dbdc1780b120de8f703139375c928dfaeded7ad402"
               }
             },
             "linux/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0de56183b7a569b0dc5d4c5fccbb14bdd03fbaf4fb324e9c6a27f5f9f699aa9e"
+                "value": "2174c345181e4e455525b1d48d68b0352b46edd74c0d484a9488bd4e688e5980"
               }
             },
             "windows/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f25262d84492cff51c4510c695a478e43a47efb3e4c0ff52c2dbf211ef11c39f"
+                "value": "76d3d86f26d8d0bb5ac5691ad164a0a2706c4957020deb9a8693c5d023b88903"
               }
             },
             "windows/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "b4347219f2c729a1f7a5feeb8b48a39ead613d849d5865409a30f1bb37ef2d7e"
+                "value": "9c8be1bcc638b71d19c9ecf6178c7fae53b4fad21fb9439aa41370ca14f90112"
               }
             }
           }
@@ -135,5 +135,5 @@
       ]
     }
   ],
-  "signature": "329fec03ad2fe4ba44c8767c64dfd63ea015e17e08a7557cf6b491affccf9f4c6f8c5c815246ec3c8bc2be5a5db903321a5de8a84d3b3e45fa23adc478552e5ebeaae0da0e6e6a534ad7ac3faf86c3f33a80969faa099f9105f08483a789191d2de230b4ac426d64ed992e4c67cd1c4fd19d13f5d2b46e43e5d6ad9ed2a1668c04e1a609c2d8bb8781fb1ee1b508c107cd18f89207fdd572751d03a2055461521fd894038d70de7a6892fcca8e8f84c6d396c7cd20a03a96ebc31d02154d22507db87a3ea7427cce2213498e345d7634897a847b86cdc68bde94f61f33a5b9cce1f4ad2d1359c9fd30181bc8df9f31954057fd928d6738dac1e9cc94fb85edbc"
+  "signature": "803a395d9ad5e0b0c059c3d0b485a16e410520a5487ff5f2429ae8fccd3fa4575a4aa50106784bd34b75a29487d70cd90f63053e86e4385630e741e953d57ec425dd4b3ea2cca74b453c4e8ea610aa666ee81dc4626b0018d6391d727c78ffae9afdc316dbfe89cff8339cf47d91eaddfb7bb90f5daaa3058ebc3aadb3439217f3c1b5fbd85393db52f6fd851525a656c2978afa2da38af948eb3f058eae053857457c7e6dd7291160ed6f88de2f057f24a065fe009350b21b9406d43cbb8b1ddd2bca64cedcb182962f7e4541aef2605823d7895faea0c1862a3f6adc26e9334549f76bd698568e3c8df21a9600774623e3ead9a7f1a860dc077a84baf484ee"
 }
