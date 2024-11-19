@@ -1,0 +1,6 @@
+# Common private key file types
+*.pem
+*.key
+*.crt
+*.csr
+*.der

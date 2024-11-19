@@ -2,9 +2,11 @@ go 1.23.0
 
 use (
 	./extensions/ai
+	./extensions/test
 	./sdk/azure
 	./sdk/common
 	./sdk/core
 	./sdk/ext
 	./sdk/ux
+	./generator
 )

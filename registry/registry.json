@@ -2,161 +2,70 @@
   "extensions": [
     {
       "name": "ai",
-      "displayName": "AI Model Deployment",
-      "description": "Manage AI model operations such as deploying AI models like GPT-4.",
+      "displayName": "AI Core Extension",
+      "description": "This extension provides capabilities to streamline various AI development tasks.",
       "versions": [
         {
-          "version": "1.0.0",
-          "usage": "azd ai <command> [options]",
+          "version": "0.1.0",
+          "usage": "azd ai \u003ccommand\u003e [options]",
           "examples": [
-            "azd ai model deploy --model gpt-4 --env production",
-            "azd ai model list-models"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.0.0/azd-ext-ai-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "a5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
+            {
+              "name": "AI setup",
+              "description": "Initialize AI capabilities for your app.",
+              "usage": "azd ai setup"
             },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.1.0/azd-ext-ai-linux-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "b4c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
+            {
+              "name": "AI evaluate flow",
+              "description": "Evaluate the flow of your AI model.",
+              "usage": "azd ai evaluate flow"
             },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.0.0/azd-ext-ai-darwin-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
+            {
+              "name": "AI chat",
+              "description": "Chat with your AI model.",
+              "usage": "azd ai chat"
             }
-          }
-        },
-        {
-          "version": "1.1.0",
-          "usage": "azd ai <command> [options]",
-          "examples": [
-            "azd ai model deploy --model gpt-4.5 --env staging",
-            "azd ai model list-models"
           ],
           "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.1.0/azd-ext-ai-windows-amd64.exe",
+            "darwin/amd64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "c6114e71c55f647a1ddeeebbe38baea900dfb1827033136025bcf0181f9aa2ab"
               }
             },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.1.0/azd-ext-ai-linux-amd64",
+            "darwin/arm64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "2a44ca07bf8374f69015e227b11b1357c135588d64b9e9451f1fd91fbba14595"
               }
             },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.1.0/azd-ext-ai-darwin-amd64",
+            "linux/amd64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            }
-          }
-        },
-        {
-          "version": "1.2.0",
-          "usage": "azd ai <command> [options]",
-          "examples": [
-            "azd ai model deploy --model gpt-4.5 --env staging",
-            "azd ai model list-models"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.2.0/azd-ext-ai-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "ba47e05c6aa767e409892b1575bb8e2d7f1809bd91bf47d843b5f9ac3ff966f6"
               }
             },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.2.0/azd-ext-ai-linux-amd64",
+            "linux/arm64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "215f02c9f9a070a65bc155934f5b786967823975bdc50f069f24bb51858c5161"
               }
             },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.2.0/azd-ext-ai-darwin-amd64",
+            "windows/amd64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            }
-          }
-        },
-        {
-          "version": "1.3.0",
-          "usage": "azd ai <command> [options]",
-          "examples": [
-            "azd ai model deployment list",
-            "azd ai model deployment create"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "cb6dad94a5f7f1d92805a8141df1f7a551b16c2431038e4671615e7c45a2fce4"
               }
             },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-linux-amd64",
+            "windows/arm64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.3.0/azd-ext-ai-darwin-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            }
-          }
-        },
-        {
-          "version": "1.4.0",
-          "usage": "azd ai <command> [options]",
-          "examples": [
-            "azd ai chat",
-            "azd ai model deployment list",
-            "azd ai model deployment create"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.4.0/azd-ext-ai-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.4.0/azd-ext-ai-linux-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/ai/1.4.0/azd-ext-ai-darwin-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "8fd7736d3f9601edaf67c3ff48dc5b47b1223677e3e619faa665380bfe8c33ea"
               }
             }
           }
@@ -165,98 +74,60 @@
     },
     {
       "name": "test",
-      "displayName": "Project Testing",
-      "description": "Tools and commands for testing azd projects.",
+      "displayName": "Test Extension",
+      "description": "This extension provides capabilities to streamline various test development tasks.",
       "versions": [
         {
-          "version": "0.9.0",
-          "usage": "azd test <command> [options]",
+          "version": "0.0.1",
+          "usage": "azd test \u003ccommand\u003e [options]",
           "examples": [
-            "azd test run --all",
-            "azd test status"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/0.9.0/azd-ext-test-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/0.9.0/azd-ext-test-linux-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/0.9.0/azd-ext-test-darwin-amd64",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
+            {
+              "name": "Test",
+              "description": "Runs tests for your apps services",
+              "usage": "azd test [service]"
             }
-          }
-        },
-        {
-          "version": "1.0.0",
-          "usage": "azd test <command> [options]",
-          "examples": [
-            "azd test run --suite integration",
-            "azd test report"
           ],
           "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/1.0.0/azd-ext-test-windows-amd64.exe",
+            "darwin/amd64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "7ec7cee57427a0a0fecb4b4c01018497a148721b631cce208ffe650fed2e2d64"
               }
             },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/1.0.0/azd-ext-test-linux-amd64",
+            "darwin/arm64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "2204c5f0061f6c254c1c41c0f5ff8a8f780bf21a6655cbd9d40d83056de68bae"
               }
             },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/1.0.0/azd-ext-test-darwin-amd64",
+            "linux/amd64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
-              }
-            }
-          }
-        },
-        {
-          "version": "1.1.0",
-          "usage": "azd test <command> [options]",
-          "examples": [
-            "azd test run --filter unit",
-            "azd test clean"
-          ],
-          "binaries": {
-            "windows": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/1.1.0/azd-ext-test-windows-amd64.exe",
-              "checksum": {
-                "algorithm": "sha256",
-                "value": "c5f2d5e9f7c123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "646295560db9d28880bc6ef858ccd3f963a72fb241540fea9fda3506256eca46"
               }
             },
-            "linux": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/1.1.0/azd-ext-test-linux-amd64",
+            "linux/arm64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5c5d6e0f8d123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "0de56183b7a569b0dc5d4c5fccbb14bdd03fbaf4fb324e9c6a27f5f9f699aa9e"
               }
             },
-            "macos": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/refs/heads/main/registry/extensions/test/1.1.0/azd-ext-test-darwin-amd64",
+            "windows/amd64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e3d4e7f1g9e123456789abcdef0123456789abcdef0123456789abcdef012345"
+                "value": "f25262d84492cff51c4510c695a478e43a47efb3e4c0ff52c2dbf211ef11c39f"
+              }
+            },
+            "windows/arm64": {
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-arm64.exe",
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "b4347219f2c729a1f7a5feeb8b48a39ead613d849d5865409a30f1bb37ef2d7e"
               }
             }
           }
@@ -264,5 +135,5 @@
       ]
     }
   ],
-  "signature": "abcd1234signaturevalue..."
+  "signature": "329fec03ad2fe4ba44c8767c64dfd63ea015e17e08a7557cf6b491affccf9f4c6f8c5c815246ec3c8bc2be5a5db903321a5de8a84d3b3e45fa23adc478552e5ebeaae0da0e6e6a534ad7ac3faf86c3f33a80969faa099f9105f08483a789191d2de230b4ac426d64ed992e4c67cd1c4fd19d13f5d2b46e43e5d6ad9ed2a1668c04e1a609c2d8bb8781fb1ee1b508c107cd18f89207fdd572751d03a2055461521fd894038d70de7a6892fcca8e8f84c6d396c7cd20a03a96ebc31d02154d22507db87a3ea7427cce2213498e345d7634897a847b86cdc68bde94f61f33a5b9cce1f4ad2d1359c9fd30181bc8df9f31954057fd928d6738dac1e9cc94fb85edbc"
 }
