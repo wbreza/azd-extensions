@@ -1,13 +1,7 @@
 package cmd
 
 import (
-	"crypto"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"os"
 	"os/exec"
@@ -84,19 +78,24 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Save the updated registry
-	registry.Signature = ""
+	// Save the updated registry without a signature
 	if err := saveRegistry(registryPath, &registry); err != nil {
 		return fmt.Errorf("failed to save registry: %v", err)
 	}
 
+	signatureManager, err := internal.NewSignatureManagerFromFiles(privateKeyPath, publicKeyPath)
+	if err != nil {
+		return fmt.Errorf("failed to create signature manager: %v", err)
+	}
+
 	// Sign the registry
-	if err := signRegistry(registryPath, privateKeyPath); err != nil {
+	// Saves the registry with the signature
+	if err := signRegistry(registryPath, signatureManager); err != nil {
 		return fmt.Errorf("failed to sign registry: %v", err)
 	}
 
 	// Validate the registry using the public key
-	if err := validateRegistrySignature(registryPath, publicKeyPath); err != nil {
+	if err := validateRegistrySignature(registryPath, signatureManager); err != nil {
 		return fmt.Errorf("public key validation failed: %v", err)
 	}
 
@@ -129,8 +128,8 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 		return fmt.Errorf("failed to read metadata: %v", err)
 	}
 
-	var metadata internal.ExtensionMetadata
-	if err := yaml.Unmarshal(metadataData, &metadata); err != nil {
+	var schema internal.ExtensionSchema
+	if err := yaml.Unmarshal(metadataData, &schema); err != nil {
 		return fmt.Errorf("failed to parse metadata: %v", err)
 	}
 
@@ -150,7 +149,7 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 	}
 
 	registryBasePath := "../registry/extensions"
-	targetPath := filepath.Join(registryBasePath, metadata.Name, version)
+	targetPath := filepath.Join(registryBasePath, schema.Name, version)
 
 	// Ensure target directory exists
 	if err := os.MkdirAll(targetPath, os.ModePerm); err != nil {
@@ -181,7 +180,7 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 		}
 
 		// Generate URL for the binary using the base URL
-		url := fmt.Sprintf("%s/%s/%s/%s", baseURL, metadata.Name, version, binary.Name())
+		url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Name, version, binary.Name())
 
 		// Add binary to the map with OS/ARCH key
 		binaryMap[osArch] = internal.ExtensionBinary{
@@ -197,7 +196,7 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 	}
 
 	// Add or update the extension in the registry
-	addOrUpdateExtension(metadata, version, binaryMap, registry)
+	addOrUpdateExtension(schema, version, binaryMap, registry)
 	return nil
 }
 
@@ -216,25 +215,25 @@ func inferOSArch(filename string) (string, error) {
 	return fmt.Sprintf("%s/%s", osPart, archPart), nil
 }
 
-func addOrUpdateExtension(metadata internal.ExtensionMetadata, version string, binaries map[string]internal.ExtensionBinary, registry *internal.Registry) {
+func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binaries map[string]internal.ExtensionBinary, registry *internal.Registry) {
 	// Find or create the extension in the registry
-	var ext *internal.Extension
+	var ext *internal.ExtensionMetadata
 	for i := range registry.Extensions {
-		if registry.Extensions[i].Name == metadata.Name {
-			ext = &registry.Extensions[i]
+		if registry.Extensions[i].Name == schema.Name {
+			ext = registry.Extensions[i]
 			break
 		}
 	}
 
 	// If the extension doesn't exist, add it
 	if ext == nil {
-		registry.Extensions = append(registry.Extensions, internal.Extension{
-			Name:        metadata.Name,
-			DisplayName: metadata.DisplayName,
-			Description: metadata.Description,
+		registry.Extensions = append(registry.Extensions, &internal.ExtensionMetadata{
+			Name:        schema.Name,
+			DisplayName: schema.DisplayName,
+			Description: schema.Description,
 			Versions:    []internal.ExtensionVersion{},
 		})
-		ext = &registry.Extensions[len(registry.Extensions)-1]
+		ext = registry.Extensions[len(registry.Extensions)-1]
 	}
 
 	// Check if the version already exists and update it if found
@@ -242,11 +241,11 @@ func addOrUpdateExtension(metadata internal.ExtensionMetadata, version string, b
 		if v.Version == version {
 			ext.Versions[i] = internal.ExtensionVersion{
 				Version:  version,
-				Usage:    metadata.Usage,
-				Examples: metadata.Examples,
+				Usage:    schema.Usage,
+				Examples: schema.Examples,
 				Binaries: binaries,
 			}
-			fmt.Printf("Updated version %s for extension %s\n", version, metadata.Name)
+			fmt.Printf("Updated version %s for extension %s\n", version, schema.Name)
 			return
 		}
 	}
@@ -254,11 +253,11 @@ func addOrUpdateExtension(metadata internal.ExtensionMetadata, version string, b
 	// If the version does not exist, add it as a new entry
 	ext.Versions = append(ext.Versions, internal.ExtensionVersion{
 		Version:  version,
-		Usage:    metadata.Usage,
-		Examples: metadata.Examples,
+		Usage:    schema.Usage,
+		Examples: schema.Examples,
 		Binaries: binaries,
 	})
-	fmt.Printf("Added new version %s for extension %s\n", version, metadata.Name)
+	fmt.Printf("Added new version %s for extension %s\n", version, schema.Name)
 }
 
 func saveRegistry(path string, registry *internal.Registry) error {
@@ -269,131 +268,66 @@ func saveRegistry(path string, registry *internal.Registry) error {
 	return os.WriteFile(path, data, 0644)
 }
 
-func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
-	keyData, err := os.ReadFile(path)
+func signRegistry(registryPath string, signatureManager *internal.SignatureManager) error {
+	// Load the registry
+	registryBytes, err := os.ReadFile(registryPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key: %w", err)
+		return fmt.Errorf("failed to read registry: %v", err)
 	}
 
-	block, _ := pem.Decode(keyData)
-	if block == nil {
-		return nil, fmt.Errorf("failed to decode PEM block containing private key")
+	// Unmarshal to extract signature and registry content
+	var registry *internal.Registry
+	if err := json.Unmarshal(registryBytes, &registry); err != nil {
+		return fmt.Errorf("failed to parse registry: %v", err)
 	}
 
-	// Try parsing as PKCS#1
-	if key, err := x509.ParsePKCS1PrivateKey(block.Bytes); err == nil {
-		return key, nil
-	}
-
-	// Try parsing as PKCS#8
-	key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	// Clear any present signature
+	registry.Signature = ""
+	rawRegistryBytes, err := json.MarshalIndent(registry, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse private key: %w", err)
+		return fmt.Errorf("failed to marshal registry: %v", err)
 	}
 
-	// Ensure it's an RSA private key
-	rsaKey, ok := key.(*rsa.PrivateKey)
-	if !ok {
-		return nil, fmt.Errorf("not an RSA private key")
-	}
-
-	return rsaKey, nil
-}
-
-func signRegistry(registryPath, privateKeyPath string) error {
-	// Read the registry file
-	registryData, err := os.ReadFile(registryPath)
-	if err != nil {
-		return fmt.Errorf("failed to read registry file: %v", err)
-	}
-
-	// Read the private key
-	privateKey, err := loadPrivateKey(privateKeyPath)
-	if err != nil {
-		return fmt.Errorf("failed to parse private key: %v", err)
-	}
-
-	// Compute the hash
-	hasher := sha256.New()
-	hasher.Write(registryData)
-	hash := hasher.Sum(nil)
-
-	// Sign the hash
-	signature, err := rsa.SignPKCS1v15(nil, privateKey, crypto.SHA256, hash)
+	// Sign the registry content
+	signature, err := signatureManager.Sign(rawRegistryBytes)
 	if err != nil {
 		return fmt.Errorf("failed to sign registry: %v", err)
 	}
 
 	// Update the registry with the signature
-	registry := &internal.Registry{}
-	if err := json.Unmarshal(registryData, registry); err != nil {
-		return fmt.Errorf("failed to parse registry for signing: %v", err)
+	registry.Signature = signature
+	if err := saveRegistry(registryPath, registry); err != nil {
+		return fmt.Errorf("failed to save registry: %v", err)
 	}
 
-	registry.Signature = fmt.Sprintf("%x", signature)
-
-	return saveRegistry(registryPath, registry)
+	return nil
 }
 
-func validateRegistrySignature(registryPath, publicKeyPath string) error {
+func validateRegistrySignature(registryPath string, signatureManager *internal.SignatureManager) error {
 	// Load the registry
-	registryData, err := os.ReadFile(registryPath)
+	registryBytes, err := os.ReadFile(registryPath)
 	if err != nil {
 		return fmt.Errorf("failed to read registry: %w", err)
 	}
 
 	// Unmarshal to extract signature and registry content
-	var rawRegistry map[string]json.RawMessage
-	if err := json.Unmarshal(registryData, &rawRegistry); err != nil {
+	var registry *internal.Registry
+	if err := json.Unmarshal(registryBytes, &registry); err != nil {
 		return fmt.Errorf("failed to parse registry: %w", err)
 	}
 
-	var signature string
-	if err := json.Unmarshal(rawRegistry["signature"], &signature); err != nil {
-		return fmt.Errorf("failed to extract signature: %w", err)
-	}
-	delete(rawRegistry, "signature")
+	// Store the signature and remove it from the registry
+	signature := registry.Signature
+	registry.Signature = ""
 
-	// Marshal the registry content back to JSON
-	registryContent, err := json.Marshal(rawRegistry)
+	// Marshal the registry content to verify the signature
+	rawRegistry, err := json.MarshalIndent(registry, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal registry content: %w", err)
+		return fmt.Errorf("failed to marshal registry: %w", err)
 	}
 
-	// Load the public key
-	publicKeyData, err := os.ReadFile(publicKeyPath)
-	if err != nil {
-		return fmt.Errorf("failed to read public key: %w", err)
-	}
-
-	block, _ := pem.Decode(publicKeyData)
-	if block == nil {
-		return fmt.Errorf("failed to decode public key PEM")
-	}
-
-	pubKey, err := x509.ParsePKIXPublicKey(block.Bytes)
-	if err != nil {
-		return fmt.Errorf("failed to parse public key: %w", err)
-	}
-
-	rsaPubKey, ok := pubKey.(*rsa.PublicKey)
-	if !ok {
-		return fmt.Errorf("public key is not RSA")
-	}
-
-	// Verify the signature
-	hash := crypto.SHA256.New()
-	hash.Write(registryContent)
-	computedHash := hash.Sum(nil)
-
-	sigBytes, err := base64.StdEncoding.DecodeString(signature)
-	if err != nil {
-		return fmt.Errorf("failed to decode signature: %w", err)
-	}
-
-	err = rsa.VerifyPKCS1v15(rsaPubKey, crypto.SHA256, computedHash, sigBytes)
-	if err != nil {
-		return fmt.Errorf("signature verification failed: %w", err)
+	if err := signatureManager.Verify(rawRegistry, signature); err != nil {
+		return fmt.Errorf("failed to verify registry signature: %w", err)
 	}
 
 	return nil
