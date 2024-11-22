@@ -30,42 +30,42 @@
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f12090cc040549e219556df85c99dd872f6ede1d757f385204c3687797cc7666"
+                "value": "cb3b2e2afa059bb2503a43692645d0155ef3b8af9b5d4b8b229915ae9ff18a26"
               }
             },
             "darwin/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "fb9f182f5980b6affeef4cc7f6367ccc9f78ab50a0d01f5bbfd7b5de016aefa4"
+                "value": "73e9ab7b375946cacb831c7b9a1d90e085a4d4f2e1e54e51872421631fda4afe"
               }
             },
             "linux/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c291e057b701fd123f36b8e3567bb0553210334669745dade88c70e6be9c8346"
+                "value": "c0ea2c93d86133a2b1811daa8c9d9e2197bf3b239453dced8c8c6b8a4c58e68e"
               }
             },
             "linux/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e3b7877cad67aac8123804a66595219ccb7397b5b6aac8499c4dd1e0d21c922c"
+                "value": "d5e85ed08163a112d891ae25ad986652b6e99b3e1f9b7a5de2a4c45f4e099133"
               }
             },
             "windows/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "1f715bde10df2691fe94e58235eb1522ed19e395a81be80a6bafabb5c085e9ae"
+                "value": "766437606b691d1b892369402e615d1bd1491c674617c6de2e7394c716565653"
               }
             },
             "windows/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "8cccf91b1588eddf6d72d2e398cb9b4d2f6f44debbb414f6268b2e61c92b7b5a"
+                "value": "e846da10e2ecbc078d9dd1a37c613621f801a7a22adb4c4e6438d118f63d24f6"
               }
             }
           }
@@ -92,42 +92,42 @@
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e4cdc451f4e905d7097dd41f3c9bfdb2b85710285e6fd47003ee4e0f4dcf085d"
+                "value": "f9976582a02c4b6c56ed1fafd65873afcb10b4d880bb890c0dc43c6dd5d1da0d"
               }
             },
             "darwin/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cab13231339d48ece43fcdfc7f067c07265e57a897ea35631b8c1e8188c39c0c"
+                "value": "fe1279b798cc47a230cc0885e2e671e023c816065c8eabc4f59fde51cd7b516f"
               }
             },
             "linux/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a9d2b6ac4243eb815e2942f707cff3419e1232bef9789e9f6a429366c0706b7f"
+                "value": "0bbfd77ccf02914c4bc281268810860b91ff099b81b589b2b593686cb125a24c"
               }
             },
             "linux/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "11d9b17b7e2017ee80830b9e50e9722724554f8985b1eed1e0a9623b01afe73b"
+                "value": "3a83ed785fb4fa9e141c536a0efa133cc4a60c8ac758cf316e889d0749d94333"
               }
             },
             "windows/amd64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "784f4cf90a73ab832c3c44d80af4a15ee4c6d4fc2b7fbb101ebe94421023f6d5"
+                "value": "59f502fa9380c86be052e2e4fb9eaf3049bbf719ad6f492510b818217545247b"
               }
             },
             "windows/arm64": {
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "ced230baad84c98b77b171dce39fb098ba4278c38d23caaa750f1a952538119d"
+                "value": "916caa12f6bc885cbc0134cc38daedb0e365cc95a79a85a103254398c16c19c1"
               }
             }
           }
@@ -135,5 +135,5 @@
       ]
     }
   ],
-  "signature": "IZzaFvH9c/fTcZjCkeia+y9l5IgTwMIzccfxMke9Ep7J7LeohR6x61/AsQNJhBzmXjQYv23868u3XDa6zrg9/6D2HSTpI6wce9khN2XE0lKa56fuLmzg4MBQp4gsWQ2Wet2+8m77lu6KA5HNBEY6qx4MQbBmwxfUEpgjT4ro06FXp8ZsM+LuitSv0hUkAqqfEFzgrbTFUDVe9pPCiXRF5hgVtzV5i14zLK/a+EN63T8RA+O1SygTNmqht0BAVz9FopuSvmaIfYYj0yHH/ows2uwfAxOuh1EgzD9uiyXqzpdRGwwyWt4XJZHE5glNsB8F6b+syQT2ojXkDHIiuyQAbA=="
+  "signature": "SUjHPXNtKt2vonMgzYeYogY8k/3ygM2pVSnHAY883O95mgAhfJABZLgWndJ6UeUi6UyGkhQdqhiFVnkS00uLwdqY8DcgbPITm77ugr7KgJ7BfNGoeOM9wvLgS3xL43Q3bs1nL6yU2c6qnwQip0g/+/foscmlDdAcFbcx1vGTAL+uOXYLBeN5CD9pXfvYkqkUPaO21FhcKoBXwLccQuwFGB6HDh0wGktFLp7Q8zFhvtEZiOK/2Tt4Zzy+wMlbMzX+mgWxImXF7K76sNAvtzJl7llmKdiPfPwuYXneyHB7wkTPw0QTV9P7mcl/YZmpY9ZfOScZo1fyP1wUo9foyeOUpA=="
 }
