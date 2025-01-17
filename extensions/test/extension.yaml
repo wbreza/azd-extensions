@@ -1,4 +1,6 @@
-name: test
+id: microsoft.azd.test
+version: 0.0.2
+namespace: test
 displayName: Test Extension
 description: This extension provides capabilities to streamline various test development tasks.
 usage: azd test <command> [options]

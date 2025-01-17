@@ -1,12 +1,13 @@
 {
   "extensions": [
     {
-      "name": "ai",
+      "id": "microsoft.azd.ai",
+      "namespace": "ai",
       "displayName": "AI Core Extension",
       "description": "This extension provides capabilities to streamline various AI development tasks.",
       "versions": [
         {
-          "version": "0.1.0",
+          "version": "0.2.0",
           "usage": "azd ai \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -27,45 +28,45 @@
           ],
           "binaries": {
             "darwin/amd64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "cb3b2e2afa059bb2503a43692645d0155ef3b8af9b5d4b8b229915ae9ff18a26"
+                "value": "04a10ef0228dbdcab53ea21f54e280d897abc3669dc3296d23340e1a622aab3e"
               }
             },
             "darwin/arm64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-darwin-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "73e9ab7b375946cacb831c7b9a1d90e085a4d4f2e1e54e51872421631fda4afe"
+                "value": "04cfd6e4079d1f4da9de0e9d7cd57dc2187ac55e70ef1292d4f7ab8d235976c2"
               }
             },
             "linux/amd64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c0ea2c93d86133a2b1811daa8c9d9e2197bf3b239453dced8c8c6b8a4c58e68e"
+                "value": "1ef592ab25eac30ac7027d4a91981790fa54015b67bf25399bcf4988aabb4821"
               }
             },
             "linux/arm64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-linux-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "d5e85ed08163a112d891ae25ad986652b6e99b3e1f9b7a5de2a4c45f4e099133"
+                "value": "28a4fcc837fd928b9fe2cfa17b91c11a4398bc903603cb4d607de24085d73870"
               }
             },
             "windows/amd64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-amd64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "766437606b691d1b892369402e615d1bd1491c674617c6de2e7394c716565653"
+                "value": "9fc89616783fa8d9149e7380ae4d909694dde6a85a370519817759acacc84f91"
               }
             },
             "windows/arm64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/ai/0.1.0/azd-ext-ai-windows-arm64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "e846da10e2ecbc078d9dd1a37c613621f801a7a22adb4c4e6438d118f63d24f6"
+                "value": "3e35018832bef09bf74d9236b2a587696a50a131b29974a9b2e72f4f7931d793"
               }
             }
           }
@@ -73,12 +74,13 @@
       ]
     },
     {
-      "name": "test",
+      "id": "microsoft.azd.test",
+      "namespace": "test",
       "displayName": "Test Extension",
       "description": "This extension provides capabilities to streamline various test development tasks.",
       "versions": [
         {
-          "version": "0.0.1",
+          "version": "0.0.2",
           "usage": "azd test \u003ccommand\u003e [options]",
           "examples": [
             {
@@ -89,51 +91,84 @@
           ],
           "binaries": {
             "darwin/amd64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-darwin-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f9976582a02c4b6c56ed1fafd65873afcb10b4d880bb890c0dc43c6dd5d1da0d"
+                "value": "a310e075b98dee2e0ec05b4b901b03e3f6a7d055109e8623990599785106a1d3"
               }
             },
             "darwin/arm64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-darwin-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-darwin-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "fe1279b798cc47a230cc0885e2e671e023c816065c8eabc4f59fde51cd7b516f"
+                "value": "aa39e6b7e4e03d563799828e6b288a3e42107e113a633b8797515d49507cf1d0"
               }
             },
             "linux/amd64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-amd64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-linux-amd64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "0bbfd77ccf02914c4bc281268810860b91ff099b81b589b2b593686cb125a24c"
+                "value": "075d24733ab70f006ef8b3b597e7277c4c95d430aac8ac41eff7486013944b82"
               }
             },
             "linux/arm64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-linux-arm64",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-linux-arm64",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "3a83ed785fb4fa9e141c536a0efa133cc4a60c8ac758cf316e889d0749d94333"
+                "value": "bb5144ece56981e9666260b9e741ca8304ac20b35493abcdc072d6887b087892"
               }
             },
             "windows/amd64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-amd64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-windows-amd64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "59f502fa9380c86be052e2e4fb9eaf3049bbf719ad6f492510b818217545247b"
+                "value": "9c3e21a003087492c84c66874a8c5a795713aed379f9e95f98257cfe20c37917"
               }
             },
             "windows/arm64": {
-              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/test/0.0.1/azd-ext-test-windows-arm64.exe",
+              "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-windows-arm64.exe",
               "checksum": {
                 "algorithm": "sha256",
-                "value": "916caa12f6bc885cbc0134cc38daedb0e365cc95a79a85a103254398c16c19c1"
+                "value": "9a5b7e195b435ca18f04ba97b28239aca969c8b7b17c05df2eab804346798369"
               }
             }
           }
         }
       ]
+    },
+    {
+      "id": "microsoft.azd.pack",
+      "displayName": "azd extension pack",
+      "description": "This extension pack provides capabilities to streamline various development tasks.",
+      "versions": [
+        {
+          "version": "0.0.1",
+          "usage": "",
+          "examples": [
+            {
+              "name": "AI setup",
+              "description": "Initialize AI capabilities for your app.",
+              "usage": "azd ai setup"
+            },
+            {
+              "name": "Test",
+              "description": "Runs tests for your apps services",
+              "usage": "azd test [service]"
+            }
+          ],
+          "dependencies": [
+            {
+              "id": "microsoft.azd.Ai",
+              "version": "0.1.0"
+            },
+            {
+              "id": "microsoft.azd.test",
+              "version": "0.0.1"
+            }
+          ]
+        }
+      ]
     }
   ],
-  "signature": "SUjHPXNtKt2vonMgzYeYogY8k/3ygM2pVSnHAY883O95mgAhfJABZLgWndJ6UeUi6UyGkhQdqhiFVnkS00uLwdqY8DcgbPITm77ugr7KgJ7BfNGoeOM9wvLgS3xL43Q3bs1nL6yU2c6qnwQip0g/+/foscmlDdAcFbcx1vGTAL+uOXYLBeN5CD9pXfvYkqkUPaO21FhcKoBXwLccQuwFGB6HDh0wGktFLp7Q8zFhvtEZiOK/2Tt4Zzy+wMlbMzX+mgWxImXF7K76sNAvtzJl7llmKdiPfPwuYXneyHB7wkTPw0QTV9P7mcl/YZmpY9ZfOScZo1fyP1wUo9foyeOUpA=="
+  "signature": "VhF6P4MgI08y9SB+GFw77HdhTaZyGwd2j8sO1BAEVRUHEDTXBE7XU0O3wrJQKsLW/t5dFn3F2xCaLq+ZprtfzlOv6xQCgj/O6zUuA2a0BuE1IosLRNbLJnwrkgAUxwb/16OnTBqpgo4AOD495eT5Fw9x/BTeU1bJoZyhwiGEAKTS2j3t0CjNtW9NcLXTXPTlcWu7FMJ2HS00WAFdTmTPv0CRewh6ZXA/anR7YnkZxY3dgDMmp8tGGYFGrbGs74YEYYUEac2Fnmn8t4nOeSyuxOb3CcLNbMHdvBQIjU42e8XNBKDLjiQRLQh1p3qprEIkDJIukxskniK8c7iHQz+9dg=="
 }

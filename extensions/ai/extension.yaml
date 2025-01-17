@@ -1,4 +1,6 @@
-name: ai
+id: microsoft.azd.ai
+version: 0.2.0
+namespace: ai
 displayName: AI Core Extension
 description: This extension provides capabilities to streamline various AI development tasks.
 usage: azd ai <command> [options]

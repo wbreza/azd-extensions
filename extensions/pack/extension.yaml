@@ -1,0 +1,16 @@
+id: microsoft.azd.pack
+version: 0.0.1
+displayName: azd extension pack
+description: This extension pack provides capabilities to streamline various development tasks.
+dependencies:
+  - id: microsoft.azd.Ai
+    version: 0.1.0
+  - id: microsoft.azd.test
+    version: 0.0.1
+examples:
+  - name: AI setup
+    description: Initialize AI capabilities for your app.
+    usage: azd ai setup
+  - name: Test
+    description: Runs tests for your apps services
+    usage: azd test [service]

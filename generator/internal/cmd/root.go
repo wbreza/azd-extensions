@@ -20,7 +20,13 @@ func NewRootCommand() *cobra.Command {
 		RunE:  buildRegistry,
 	}
 
-	rootCmd.Flags().StringSliceP("paths", "p", []string{"../extensions/ai", "../extensions/test"}, "Paths to the extensions to process")
+	paths := []string{
+		"../extensions/ai",
+		"../extensions/test",
+		"../extensions/pack",
+	}
+
+	rootCmd.Flags().StringSliceP("paths", "p", paths, "Paths to the extensions to process")
 	rootCmd.Flags().StringP("private-key", "k", "private_key.pem", "Path to the private key for signing the registry")
 	rootCmd.Flags().StringP("public-key", "u", "public_key.pem", "Path to the public key for validation")
 	rootCmd.Flags().StringP("registry", "r", "../registry/registry.json", "Path to the registry.json file")
@@ -104,23 +110,6 @@ func buildRegistry(cmd *cobra.Command, args []string) error {
 }
 
 func processExtension(path, baseURL string, registry *internal.Registry) error {
-	// Ensure required files exist
-	requiredFiles := []string{"version.txt", "build.sh", "extension.yaml"}
-	for _, file := range requiredFiles {
-		fullFilePath := filepath.Join(path, file)
-		if _, err := os.Stat(fullFilePath); os.IsNotExist(err) {
-			return fmt.Errorf("missing required file: %s", fullFilePath)
-		}
-	}
-
-	// Build the binaries
-	buildScript := filepath.Join(path, "build.sh")
-	cmd := exec.Command("bash", buildScript)
-	cmd.Dir = path
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to build binaries: %s", string(output))
-	}
-
 	// Load metadata
 	metadataPath := filepath.Join(path, "extension.yaml")
 	metadataData, err := os.ReadFile(metadataPath)
@@ -133,70 +122,70 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 		return fmt.Errorf("failed to parse metadata: %v", err)
 	}
 
-	// Load version
-	versionPath := filepath.Join(path, "version.txt")
-	versionData, err := os.ReadFile(versionPath)
-	if err != nil {
-		return fmt.Errorf("failed to read version: %v", err)
+	// Build the binaries
+	buildScript := filepath.Join(path, "build.sh")
+	if _, err := os.Stat(buildScript); err == nil {
+		cmd := exec.Command("bash", "build.sh")
+		cmd.Dir = path
+		if output, err := cmd.CombinedOutput(); err != nil {
+			return fmt.Errorf("failed to build binaries: %s", string(output))
+		}
 	}
-	version := string(versionData)
 
 	// Prepare binaries for registry
 	binariesPath := filepath.Join(path, "bin")
 	binaries, err := os.ReadDir(binariesPath)
-	if err != nil {
-		return fmt.Errorf("failed to list binaries: %v", err)
-	}
-
-	registryBasePath := "../registry/extensions"
-	targetPath := filepath.Join(registryBasePath, schema.Name, version)
-
-	// Ensure target directory exists
-	if err := os.MkdirAll(targetPath, os.ModePerm); err != nil {
-		return fmt.Errorf("failed to create target directory: %v", err)
-	}
-
-	// Map and copy binaries
 	binaryMap := map[string]internal.ExtensionBinary{}
-	for _, binary := range binaries {
-		sourcePath := filepath.Join(binariesPath, binary.Name())
-		targetFilePath := filepath.Join(targetPath, binary.Name())
+	if err == nil {
+		registryBasePath := "../registry/extensions"
+		targetPath := filepath.Join(registryBasePath, schema.Id, schema.Version)
 
-		// Copy the binary to the registry folder
-		if err := internal.CopyFile(sourcePath, targetFilePath); err != nil {
-			return fmt.Errorf("failed to copy binary %s: %v", binary.Name(), err)
+		// Ensure target directory exists
+		if err := os.MkdirAll(targetPath, os.ModePerm); err != nil {
+			return fmt.Errorf("failed to create target directory: %v", err)
 		}
 
-		// Generate checksum
-		checksum, err := internal.ComputeChecksum(targetFilePath)
-		if err != nil {
-			return fmt.Errorf("failed to compute checksum for %s: %v", targetFilePath, err)
-		}
+		// Map and copy binaries
+		for _, binary := range binaries {
+			sourcePath := filepath.Join(binariesPath, binary.Name())
+			targetFilePath := filepath.Join(targetPath, binary.Name())
 
-		// Parse binary filename to infer OS/ARCH
-		osArch, err := inferOSArch(binary.Name())
-		if err != nil {
-			return fmt.Errorf("failed to infer OS/ARCH for binary %s: %v", binary.Name(), err)
-		}
+			// Copy the binary to the registry folder
+			if err := internal.CopyFile(sourcePath, targetFilePath); err != nil {
+				return fmt.Errorf("failed to copy binary %s: %v", binary.Name(), err)
+			}
 
-		// Generate URL for the binary using the base URL
-		url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Name, version, binary.Name())
+			// Generate checksum
+			checksum, err := internal.ComputeChecksum(targetFilePath)
+			if err != nil {
+				return fmt.Errorf("failed to compute checksum for %s: %v", targetFilePath, err)
+			}
 
-		// Add binary to the map with OS/ARCH key
-		binaryMap[osArch] = internal.ExtensionBinary{
-			URL: url,
-			Checksum: struct {
-				Algorithm string `json:"algorithm"`
-				Value     string `json:"value"`
-			}{
-				Algorithm: "sha256",
-				Value:     checksum,
-			},
+			// Parse binary filename to infer OS/ARCH
+			osArch, err := inferOSArch(binary.Name())
+			if err != nil {
+				return fmt.Errorf("failed to infer OS/ARCH for binary %s: %v", binary.Name(), err)
+			}
+
+			// Generate URL for the binary using the base URL
+			url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Id, schema.Version, binary.Name())
+
+			// Add binary to the map with OS/ARCH key
+			binaryMap[osArch] = internal.ExtensionBinary{
+				URL: url,
+				Checksum: struct {
+					Algorithm string `json:"algorithm"`
+					Value     string `json:"value"`
+				}{
+					Algorithm: "sha256",
+					Value:     checksum,
+				},
+			}
 		}
 	}
 
 	// Add or update the extension in the registry
-	addOrUpdateExtension(schema, version, binaryMap, registry)
+	addOrUpdateExtension(schema, schema.Version, binaryMap, registry)
 	return nil
 }
 
@@ -219,7 +208,7 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 	// Find or create the extension in the registry
 	var ext *internal.ExtensionMetadata
 	for i := range registry.Extensions {
-		if registry.Extensions[i].Name == schema.Name {
+		if registry.Extensions[i].Id == schema.Id {
 			ext = registry.Extensions[i]
 			break
 		}
@@ -228,7 +217,8 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 	// If the extension doesn't exist, add it
 	if ext == nil {
 		registry.Extensions = append(registry.Extensions, &internal.ExtensionMetadata{
-			Name:        schema.Name,
+			Id:          schema.Id,
+			Namespace:   schema.Namespace,
 			DisplayName: schema.DisplayName,
 			Description: schema.Description,
 			Versions:    []internal.ExtensionVersion{},
@@ -245,19 +235,20 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 				Examples: schema.Examples,
 				Binaries: binaries,
 			}
-			fmt.Printf("Updated version %s for extension %s\n", version, schema.Name)
+			fmt.Printf("Updated version %s for extension %s\n", version, schema.Id)
 			return
 		}
 	}
 
 	// If the version does not exist, add it as a new entry
 	ext.Versions = append(ext.Versions, internal.ExtensionVersion{
-		Version:  version,
-		Usage:    schema.Usage,
-		Examples: schema.Examples,
-		Binaries: binaries,
+		Version:      version,
+		Usage:        schema.Usage,
+		Examples:     schema.Examples,
+		Dependencies: schema.Dependencies,
+		Binaries:     binaries,
 	})
-	fmt.Printf("Added new version %s for extension %s\n", version, schema.Name)
+	fmt.Printf("Added new version %s for extension %s\n", version, schema.Id)
 }
 
 func saveRegistry(path string, registry *internal.Registry) error {

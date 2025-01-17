@@ -1,3 +1,16 @@
-# azd ai extension
+# `azd` AI Extension
 
-An AZD AI extension
+## AI setup
+Initialize AI capabilities for your app.
+
+`azd ai setup`
+
+## AI evaluate flow
+Evaluate the flow of your AI model.
+
+`azd ai evaluate flow`
+
+## AI chat
+Chat with your AI model
+
+`azd ai chat`
