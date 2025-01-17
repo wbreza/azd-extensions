@@ -4,6 +4,9 @@ namespace: test
 displayName: Test Extension
 description: This extension provides capabilities to streamline various test development tasks.
 usage: azd test <command> [options]
+tags:
+  - test
+  - extension
 examples:
   - name: Test
     description: Runs tests for your apps services

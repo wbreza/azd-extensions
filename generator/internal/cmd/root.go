@@ -216,15 +216,18 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 
 	// If the extension doesn't exist, add it
 	if ext == nil {
-		registry.Extensions = append(registry.Extensions, &internal.ExtensionMetadata{
-			Id:          schema.Id,
-			Namespace:   schema.Namespace,
-			DisplayName: schema.DisplayName,
-			Description: schema.Description,
-			Versions:    []internal.ExtensionVersion{},
-		})
-		ext = registry.Extensions[len(registry.Extensions)-1]
+		ext = &internal.ExtensionMetadata{
+			Versions: []internal.ExtensionVersion{},
+		}
+
+		registry.Extensions = append(registry.Extensions, ext)
 	}
+
+	ext.Id = schema.Id
+	ext.Namespace = schema.Namespace
+	ext.DisplayName = schema.DisplayName
+	ext.Description = schema.Description
+	ext.Tags = schema.Tags
 
 	// Check if the version already exists and update it if found
 	for i, v := range ext.Versions {
