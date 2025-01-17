@@ -233,10 +233,11 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 	for i, v := range ext.Versions {
 		if v.Version == version {
 			ext.Versions[i] = internal.ExtensionVersion{
-				Version:  version,
-				Usage:    schema.Usage,
-				Examples: schema.Examples,
-				Binaries: binaries,
+				Version:      version,
+				Usage:        schema.Usage,
+				Examples:     schema.Examples,
+				Dependencies: schema.Dependencies,
+				Binaries:     binaries,
 			}
 			fmt.Printf("Updated version %s for extension %s\n", version, schema.Id)
 			return
