@@ -3,7 +3,7 @@ version: 0.0.1
 displayName: azd extension pack
 description: This extension pack provides capabilities to streamline various development tasks.
 dependencies:
-  - id: microsoft.azd.Ai
+  - id: microsoft.azd.ai
     version: 0.2.0
   - id: microsoft.azd.test
     version: 0.0.2
