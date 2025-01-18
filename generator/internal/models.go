@@ -44,15 +44,15 @@ type ExtensionDependency struct {
 
 // ExtensionVersion represents a version of an extension
 type ExtensionVersion struct {
-	Version      string                     `json:"version"`
-	Usage        string                     `json:"usage"`
-	Examples     []ExtensionExample         `json:"examples"`
-	Binaries     map[string]ExtensionBinary `json:"binaries,omitempty"`
-	Dependencies []ExtensionDependency      `json:"dependencies,omitempty"`
+	Version      string                       `json:"version"`
+	Usage        string                       `json:"usage"`
+	Examples     []ExtensionExample           `json:"examples"`
+	Artifacts    map[string]ExtensionArtifact `json:"artifacts,omitempty"`
+	Dependencies []ExtensionDependency        `json:"dependencies,omitempty"`
 }
 
-// ExtensionBinary represents the binary information of an extension
-type ExtensionBinary struct {
+// ExtensionArtifact represents the artifact information of an extension
+type ExtensionArtifact struct {
 	URL      string            `json:"url"`
 	Checksum ExtensionChecksum `json:"checksum"`
 }

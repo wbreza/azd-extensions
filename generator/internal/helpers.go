@@ -47,12 +47,12 @@ func CopyFile(source, target string) error {
 	return nil
 }
 
-// InferOSArch infers OS/ARCH from a binary filename
+// InferOSArch infers OS/ARCH from a artifact filename
 func InferOSArch(filename string) (string, error) {
 	parts := filepath.Base(filename)
 	partsArr := filepath.SplitList(parts)
 	if len(partsArr) < 3 {
-		return "", fmt.Errorf("invalid binary filename format: %s", filename)
+		return "", fmt.Errorf("invalid artifact filename format: %s", filename)
 	}
 	osArch := fmt.Sprintf("%s/%s", partsArr[1], partsArr[2])
 	return osArch, nil

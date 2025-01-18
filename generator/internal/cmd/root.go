@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -30,7 +32,7 @@ func NewRootCommand() *cobra.Command {
 	rootCmd.Flags().StringP("private-key", "k", "private_key.pem", "Path to the private key for signing the registry")
 	rootCmd.Flags().StringP("public-key", "u", "public_key.pem", "Path to the public key for validation")
 	rootCmd.Flags().StringP("registry", "r", "../registry/registry.json", "Path to the registry.json file")
-	rootCmd.Flags().StringP("base-url", "b", "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions", "Base URL for binary paths (e.g., https://github.com/user/repo/raw/main/registry/extensions)")
+	rootCmd.Flags().StringP("base-url", "b", "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions", "Base URL for artifact paths (e.g., https://github.com/user/repo/raw/main/registry/extensions)")
 
 	return rootCmd
 }
@@ -122,20 +124,20 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 		return fmt.Errorf("failed to parse metadata: %v", err)
 	}
 
-	// Build the binaries
+	// Build the artifacts
 	buildScript := filepath.Join(path, "build.sh")
 	if _, err := os.Stat(buildScript); err == nil {
 		cmd := exec.Command("bash", "build.sh")
 		cmd.Dir = path
 		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("failed to build binaries: %s", string(output))
+			return fmt.Errorf("failed to build artifacts: %s", string(output))
 		}
 	}
 
-	// Prepare binaries for registry
-	binariesPath := filepath.Join(path, "bin")
-	binaries, err := os.ReadDir(binariesPath)
-	binaryMap := map[string]internal.ExtensionBinary{}
+	// Prepare artifacts for registry
+	artifactsPath := filepath.Join(path, "bin")
+	artifacts, err := os.ReadDir(artifactsPath)
+	artifactMap := map[string]internal.ExtensionArtifact{}
 	if err == nil {
 		registryBasePath := "../registry/extensions"
 		targetPath := filepath.Join(registryBasePath, schema.Id, schema.Version)
@@ -145,14 +147,17 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 			return fmt.Errorf("failed to create target directory: %v", err)
 		}
 
-		// Map and copy binaries
-		for _, binary := range binaries {
-			sourcePath := filepath.Join(binariesPath, binary.Name())
-			targetFilePath := filepath.Join(targetPath, binary.Name())
+		// Map and copy artifacts
+		for _, artifact := range artifacts {
+			sourcePath := filepath.Join(artifactsPath, artifact.Name())
 
-			// Copy the binary to the registry folder
-			if err := internal.CopyFile(sourcePath, targetFilePath); err != nil {
-				return fmt.Errorf("failed to copy binary %s: %v", binary.Name(), err)
+			fileWithoutExt := getFileNameWithoutExt(artifact.Name())
+			zipFileName := fmt.Sprintf("%s.zip", fileWithoutExt)
+			targetFilePath := filepath.Join(targetPath, zipFileName)
+
+			// Create a ZIP archive for the artifact
+			if err := zipSource(sourcePath, targetFilePath); err != nil {
+				return fmt.Errorf("failed to create archive for %s: %v", artifact.Name(), err)
 			}
 
 			// Generate checksum
@@ -161,17 +166,17 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 				return fmt.Errorf("failed to compute checksum for %s: %v", targetFilePath, err)
 			}
 
-			// Parse binary filename to infer OS/ARCH
-			osArch, err := inferOSArch(binary.Name())
+			// Parse artifact filename to infer OS/ARCH
+			osArch, err := inferOSArch(artifact.Name())
 			if err != nil {
-				return fmt.Errorf("failed to infer OS/ARCH for binary %s: %v", binary.Name(), err)
+				return fmt.Errorf("failed to infer OS/ARCH for artifact %s: %v", artifact.Name(), err)
 			}
 
-			// Generate URL for the binary using the base URL
-			url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Id, schema.Version, binary.Name())
+			// Generate URL for the artifact using the base URL
+			url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Id, schema.Version, filepath.Base(targetFilePath))
 
-			// Add binary to the map with OS/ARCH key
-			binaryMap[osArch] = internal.ExtensionBinary{
+			// Add artifact to the map with OS/ARCH key
+			artifactMap[osArch] = internal.ExtensionArtifact{
 				URL: url,
 				Checksum: struct {
 					Algorithm string `json:"algorithm"`
@@ -185,7 +190,7 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 	}
 
 	// Add or update the extension in the registry
-	addOrUpdateExtension(schema, schema.Version, binaryMap, registry)
+	addOrUpdateExtension(schema, schema.Version, artifactMap, registry)
 	return nil
 }
 
@@ -193,7 +198,7 @@ func inferOSArch(filename string) (string, error) {
 	// Example filename: azd-ext-ai-windows-amd64.exe
 	parts := strings.Split(filename, "-")
 	if len(parts) < 3 {
-		return "", fmt.Errorf("invalid binary filename format: %s", filename)
+		return "", fmt.Errorf("invalid artifact filename format: %s", filename)
 	}
 
 	// Extract OS and ARCH from the filename
@@ -204,7 +209,7 @@ func inferOSArch(filename string) (string, error) {
 	return fmt.Sprintf("%s/%s", osPart, archPart), nil
 }
 
-func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binaries map[string]internal.ExtensionBinary, registry *internal.Registry) {
+func addOrUpdateExtension(schema internal.ExtensionSchema, version string, artifacts map[string]internal.ExtensionArtifact, registry *internal.Registry) {
 	// Find or create the extension in the registry
 	var ext *internal.ExtensionMetadata
 	for i := range registry.Extensions {
@@ -237,7 +242,7 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 				Usage:        schema.Usage,
 				Examples:     schema.Examples,
 				Dependencies: schema.Dependencies,
-				Binaries:     binaries,
+				Artifacts:    artifacts,
 			}
 			fmt.Printf("Updated version %s for extension %s\n", version, schema.Id)
 			return
@@ -250,7 +255,7 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, binar
 		Usage:        schema.Usage,
 		Examples:     schema.Examples,
 		Dependencies: schema.Dependencies,
-		Binaries:     binaries,
+		Artifacts:    artifacts,
 	})
 	fmt.Printf("Added new version %s for extension %s\n", version, schema.Id)
 }
@@ -326,4 +331,53 @@ func validateRegistrySignature(registryPath string, signatureManager *internal.S
 	}
 
 	return nil
+}
+
+func zipSource(source, target string) error {
+	outputFile, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+
+	defer outputFile.Close()
+
+	fileInfo, err := os.Stat(source)
+	if err != nil {
+		return err
+	}
+
+	zipWriter := zip.NewWriter(outputFile)
+	defer zipWriter.Close()
+
+	header := &zip.FileHeader{
+		Name:     filepath.Base(source),
+		Modified: fileInfo.ModTime(),
+		Method:   zip.Deflate,
+	}
+
+	headerWriter, err := zipWriter.CreateHeader(header)
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(headerWriter, file)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// getFileNameWithoutExt extracts the filename without its extension
+func getFileNameWithoutExt(filePath string) string {
+	// Get the base filename
+	fileName := filepath.Base(filePath)
+
+	// Remove the extension
+	return strings.TrimSuffix(fileName, filepath.Ext(fileName))
 }
