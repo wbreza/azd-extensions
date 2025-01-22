@@ -176,7 +176,10 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 			// Generate URL for the artifact using the base URL
 			url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Id, schema.Version, filepath.Base(targetFilePath))
 
-			platformMetadata := map[string]any{}
+			platformMetadata := map[string]any{
+				"entryPoint": artifact.Name(),
+			}
+
 			operatingSystems := []string{"windows", "linux", "darwin"}
 			architectures := []string{"amd64", "arm64"}
 

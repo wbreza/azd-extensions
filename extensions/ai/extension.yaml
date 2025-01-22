@@ -18,6 +18,3 @@ examples:
   - name: AI chat
     description: Chat with your AI model.
     usage: azd ai chat
-platforms:
-  windows:
-    entryPoint: microsoft.azd.ai.exe

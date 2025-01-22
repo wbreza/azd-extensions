@@ -30,49 +30,49 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "01008dfd35ba20328fbf4cad04a7a5be4bf6336494a668a9707f0cc74b2a16ca"
+                "value": "e4a10bfd2ea1697ab0a091c9064eef5d5205068c2f6989074ab86f4ded56c40d"
               },
-              "entryPoint": "microsoft.azd.ai.exe",
+              "entryPoint": "azd-ext-ai-darwin-amd64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-darwin-amd64.zip"
             },
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "12ec111eff181eafd28d53ac232d39ba1227de785550bcce88384bc4a8afb215"
+                "value": "23ed768272d56e183ca316664f83f0d7604f9e04cd52cd386d3b4fdf73c9ee2f"
               },
-              "entryPoint": "microsoft.azd.ai.exe",
+              "entryPoint": "azd-ext-ai-darwin-arm64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-darwin-arm64.zip"
             },
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "4357c736716b90d6bdff1d6efacae9d25c496b3353723dda54028188ef0f1da5"
+                "value": "328abe9c02d7d769f548b6f815f8f2a13ad2ae18c92ee55806f070106d785ca9"
               },
-              "entryPoint": "microsoft.azd.ai.exe",
+              "entryPoint": "azd-ext-ai-linux-amd64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-linux-amd64.zip"
             },
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "64aa293cb78f06b249481a6a7da1980aa75c4f978a1283b658ea0f968da4b612"
+                "value": "5a1da129cd33adb720d96aa11e63b148d1da36151bc815f8a0d6e5594f576ed7"
               },
-              "entryPoint": "microsoft.azd.ai.exe",
+              "entryPoint": "azd-ext-ai-linux-arm64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-linux-arm64.zip"
             },
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "63f8e4e8c4478e927078b44aa007fae3afe0487cbe2fc5a19e72e36ffc5e5571"
+                "value": "7005dd85eb58ec45841bb1b097beb7259a95a27c9063586730a91c1188190542"
               },
-              "entryPoint": "microsoft.azd.ai.exe",
+              "entryPoint": "azd-ext-ai-windows-amd64.exe",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-windows-amd64.zip"
             },
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "14b158dc3cef242a62aef424a43bda85c2a241353477ee7b58ee6d90b761d2e5"
+                "value": "e1b9f98f56cb8e5346bf2314ad6ede87c09a08452b33f83b673f46595adb6472"
               },
-              "entryPoint": "microsoft.azd.ai.exe",
+              "entryPoint": "azd-ext-ai-windows-arm64.exe",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.ai/0.2.0/azd-ext-ai-windows-arm64.zip"
             }
           },
@@ -104,43 +104,49 @@
             "darwin/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f43a0fe92d600df84f1313a21405420b9aec3f8b618a7466ad48f7b0515b1236"
+                "value": "b79d94795c04b967b72802872fe7a8b0865da90cb2d4f35f54265308a0675157"
               },
+              "entryPoint": "azd-ext-test-darwin-amd64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-darwin-amd64.zip"
             },
             "darwin/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "ef6e6fe646c9102c9068ec1f3519341bd54a572b8ca739e9cffc98a5b4bb390e"
+                "value": "3b66d9c5c2f418810fc8ce6737b2943abae1877ee9537f11e35e6e96a1ee8774"
               },
+              "entryPoint": "azd-ext-test-darwin-arm64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-darwin-arm64.zip"
             },
             "linux/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "c017d56425a952191458bff06b3f66dda6a988f3b75acc90773a837904319799"
+                "value": "b54557ddb563ad886b9b41a28f5e1136bae1f1d94955f19a98f8bddc0c619452"
               },
+              "entryPoint": "azd-ext-test-linux-amd64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-linux-amd64.zip"
             },
             "linux/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "a23d87fe08594dc0f23dd5dc9ecd5d608791e5e2dbaa353272b37e3fa325a293"
+                "value": "41935ef5017e76085bff93f193f0cb58be99a044455c711e3eb811d61364b0d6"
               },
+              "entryPoint": "azd-ext-test-linux-arm64",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-linux-arm64.zip"
             },
             "windows/amd64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "b915de2e75b5bf65a294da400717d1831cc6850c170171bddaa5dc970990d330"
+                "value": "9767630aed98323b1fe782ee1f3e9d7a83b8b670efadc946ac3bdb57776a1352"
               },
+              "entryPoint": "azd-ext-test-windows-amd64.exe",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-windows-amd64.zip"
             },
             "windows/arm64": {
               "checksum": {
                 "algorithm": "sha256",
-                "value": "f7671374ba2c8afd2ee7e05e36cd0d68db7a4b108d122c7e971f8be5dc6fc38c"
+                "value": "66eec18597c4ce1e170ab6043572a8eb696b611ab0f3915deb7d33648d9f1efb"
               },
+              "entryPoint": "azd-ext-test-windows-arm64.exe",
               "url": "https://github.com/wbreza/azd-extensions/raw/main/registry/extensions/microsoft.azd.test/0.0.2/azd-ext-test-windows-arm64.zip"
             }
           }
@@ -188,5 +194,5 @@
       ]
     }
   ],
-  "signature": "dpTud2oM11/R9ElxHVNsUNnnddFrE+9tftJPO9EOndEJMbv5ImqJppLDmEnxLLcEHmzYsU5slVA2qCyTKql6vnqvYVhQzORvRCkCYe/6SbPDLAykzjAdc88G5WorHZyfJACWmdVbiERSEC6Rn7i8Qh79wJUM2KbcvfMdMBrgLmWcTmvyF893TWBY1RngXrZmkkcH9LHm4qcjKucf31cSnH6PJtf2ByJnQeApel53gxNRTLIdCoLu1ooDuFwD9CpyAjXFefIKgVv5EkCZ6P4W+GeTbp5mzdjs20V0bCM+G9/bjYoqRHioS0NH1b/PX3sxte2w94GlWa03cXA2GX489g=="
+  "signature": "o8GdoLhIinhO5jixbjJmNBkBSU6WvplKMOFXmDsy54Q/fbixHKVWMu6Q39/pZ7SxBVHuLjfnaO4uq7D2AK1lV0VJyVDTBGVBQGtyMxW6orWBoh1MAcrhaUavAfPQpctf8vj19tsFmzP9XPRg3hv5Ws7Rq9Jbo5qxAP0Tu4CAwiaKN2vh3NO7eS8xJ7tzvnflO/3nSOKM+D0g1PJLPLP6x7lJj9V7esBN4DuGjMyo2VVGK4j1zFPrhtjgEhC6IoXfY+9HKXAbNe9enczrVArr0X7ztFKY6+G2VbB1mSjAwt18SFnjqJVnGkO4ZkMWTvH6DHb5bT1csJy4ZIT8efsCBg=="
 }
