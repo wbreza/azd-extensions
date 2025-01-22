@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/spf13/cobra"
 	"github.com/wbreza/azd-extensions/generator/internal"
 	"gopkg.in/yaml.v3"
@@ -175,6 +176,26 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 			// Generate URL for the artifact using the base URL
 			url := fmt.Sprintf("%s/%s/%s/%s", baseURL, schema.Id, schema.Version, filepath.Base(targetFilePath))
 
+			platformMetadata := map[string]any{}
+			operatingSystems := []string{"windows", "linux", "darwin"}
+			architectures := []string{"amd64", "arm64"}
+
+			for _, os := range operatingSystems {
+				if err := mergo.Merge(&platformMetadata, schema.Platforms[os]); err != nil {
+					return fmt.Errorf("failed to merge os metadata: %v", err)
+				}
+			}
+
+			for _, arch := range architectures {
+				if err := mergo.Merge(&platformMetadata, schema.Platforms[arch]); err != nil {
+					return fmt.Errorf("failed to merge architecture metadata: %v", err)
+				}
+			}
+
+			if err := mergo.Merge(&platformMetadata, schema.Platforms[osArch]); err != nil {
+				return fmt.Errorf("failed to merge os/arch metadata: %v", err)
+			}
+
 			// Add artifact to the map with OS/ARCH key
 			artifactMap[osArch] = internal.ExtensionArtifact{
 				URL: url,
@@ -185,6 +206,7 @@ func processExtension(path, baseURL string, registry *internal.Registry) error {
 					Algorithm: "sha256",
 					Value:     checksum,
 				},
+				AdditionalMetadata: platformMetadata,
 			}
 		}
 	}
@@ -239,6 +261,7 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, artif
 		if v.Version == version {
 			ext.Versions[i] = internal.ExtensionVersion{
 				Version:      version,
+				EntryPoint:   schema.EntryPoint,
 				Usage:        schema.Usage,
 				Examples:     schema.Examples,
 				Dependencies: schema.Dependencies,
@@ -252,6 +275,7 @@ func addOrUpdateExtension(schema internal.ExtensionSchema, version string, artif
 	// If the version does not exist, add it as a new entry
 	ext.Versions = append(ext.Versions, internal.ExtensionVersion{
 		Version:      version,
+		EntryPoint:   schema.EntryPoint,
 		Usage:        schema.Usage,
 		Examples:     schema.Examples,
 		Dependencies: schema.Dependencies,

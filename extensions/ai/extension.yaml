@@ -1,6 +1,7 @@
 id: microsoft.azd.ai
 version: 0.2.0
 namespace: ai
+entryPoint: microsoft.azd.ai
 displayName: AI Core Extension
 description: This extension provides capabilities to streamline various AI development tasks. (updated)
 usage: azd ai <command> [options]
@@ -17,3 +18,6 @@ examples:
   - name: AI chat
     description: Chat with your AI model.
     usage: azd ai chat
+platforms:
+  windows:
+    entryPoint: microsoft.azd.ai.exe
